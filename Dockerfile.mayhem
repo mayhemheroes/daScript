@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 ubuntu:22.04
+FROM --platform=linux/amd64 ubuntu:22.04 as builder
 
 RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential cmake freeglut3-dev
@@ -11,3 +11,12 @@ RUN chmod +x ./generate_gcc_linux_min.sh
 RUN ./generate_gcc_linux_min.sh
 WORKDIR /repo/cmake_temp
 RUN make -j8
+
+RUN mkdir -p /deps
+RUN ldd /repo/bin/daScript | tr -s '[:blank:]' '\n' | grep '^/' | xargs -I % sh -c 'cp % /deps;'
+
+FROM ubuntu:22.04 as package
+
+COPY --from=builder /deps /deps
+COPY --from=builder /repo/bin/daScript /repo/bin/daScript
+ENV LD_LIBRARY_PATH=/deps
