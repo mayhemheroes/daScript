@@ -1,5 +1,5 @@
 project: dascript
-target: dascript
+target: daScript
 
 cmds:
   - cmd: /repo/bin/daScript @@ -dry-run
