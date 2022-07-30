@@ -2,6 +2,6 @@ project: dascript
 target: daScript
 
 cmds:
-  - cmd: /repo/bin/daScript @@ -dry-run
+  - cmd: /daScript @@ -dry-run
     env:
       DISABLE_SMOKETEST: '1'
