@@ -2,6 +2,7 @@
 
 namespace das {
     bool is_in_aot();
+    bool is_in_completion();
     void setCommandLineArguments ( int argc, char * argv[] );
     void getCommandLineArguments( Array & arr );
     bool is_compiling ( Context * ctx );
@@ -42,6 +43,7 @@ namespace das {
     void builtin_array_resize ( Array & pArray, int newSize, int stride, Context * context );
     void builtin_array_reserve ( Array & pArray, int newSize, int stride, Context * context );
     void builtin_array_erase ( Array & pArray, int index, int stride, Context * context ) ;
+    void builtin_array_erase_range ( Array & pArray, int index, int count, int stride, Context * context ) ;
     void builtin_array_clear ( Array & pArray, Context * context );
     void builtin_array_lock ( const Array & arr, Context * context );
     void builtin_array_unlock ( const Array & arr, Context * context );

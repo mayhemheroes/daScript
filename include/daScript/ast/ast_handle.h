@@ -124,6 +124,7 @@ namespace das
         ModuleLibrary *            mlib = nullptr;
         vector<TypeAnnotation*> parents;
         bool validationNeverFails = false;
+        recursive_mutex walkMutex;
     };
 
     template <typename TT, bool canCopy = isCloneable<TT>::value>
@@ -454,12 +455,15 @@ namespace das
             return nullptr;
         }
         virtual void walk ( DataWalker & walker, void * vec ) override {
-            if ( !ati ) {
-                auto dimType = make_smart<TypeDecl>(*vecType);
-                dimType->ref = 0;
-                dimType->dim.push_back(1);
-                ati = helpA.makeTypeInfo(nullptr, dimType);
-                ati->flags |= TypeInfo::flag_isHandled;
+            {
+                lock_guard<recursive_mutex> guard(walkMutex);
+                if ( !ati ) {
+                    auto dimType = make_smart<TypeDecl>(*vecType);
+                    dimType->ref = 0;
+                    dimType->dim.push_back(1);
+                    ati = helpA.makeTypeInfo(nullptr, dimType);
+                    ati->flags |= TypeInfo::flag_isHandled;
+                }
             }
             auto pVec = (VectorType *)vec;
             auto atit = *ati;
@@ -471,6 +475,7 @@ namespace das
         TypeDeclPtr                vecType;
         DebugInfoHelper            helpA;
         TypeInfo *                 ati = nullptr;
+        recursive_mutex            walkMutex;
     };
 
     template <typename TT>
@@ -507,6 +512,8 @@ namespace das
                 SideEffects::modifyArgument, "das_vector_resize")->generated = true;
             addExtern<DAS_BIND_FUN(das_vector_erase<TT>)>(*mod, lib, "erase",
                 SideEffects::modifyArgument, "das_vector_erase")->generated = true;
+            addExtern<DAS_BIND_FUN(das_vector_erase_range<TT>)>(*mod, lib, "erase",
+                SideEffects::modifyArgument, "das_vector_erase_range")->generated = true;
             addExtern<DAS_BIND_FUN(das_vector_each<TT>),SimNode_ExtFuncCallAndCopyOrMove,explicitConstArgFn>(*mod, lib, "each",
                 SideEffects::none, "das_vector_each")->generated = true;
             addExtern<DAS_BIND_FUN(das_vector_each_const<TT>),SimNode_ExtFuncCallAndCopyOrMove,explicitConstArgFn>(*mod, lib, "each",
@@ -545,6 +552,9 @@ namespace das
             addExtern<DAS_BIND_FUN(das_vector_erase<TT>)>(*mod, lib, "erase",
                 SideEffects::modifyArgument, "das_vector_erase")
                     ->args({"vec","index","context"})->generated = true;
+            addExtern<DAS_BIND_FUN(das_vector_erase_range<TT>)>(*mod, lib, "erase",
+                SideEffects::modifyArgument, "das_vector_erase_range")
+                    ->args({"vec","index","count","context"})->generated = true;
             addExtern<DAS_BIND_FUN(das_vector_each<TT>),SimNode_ExtFuncCallAndCopyOrMove,explicitConstArgFn>(*mod, lib, "each",
                 SideEffects::none, "das_vector_each")
                     ->args({"vec","context"})->generated = true;

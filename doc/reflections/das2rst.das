@@ -46,6 +46,7 @@ require daslib/enum_trait
 require daslib/cpp_bind
 require daslib/decs
 require daslib/decs_boost
+require daslib/utf8_utils
 
 def document_module_math(root:string)
     var mod = get_module("math")
@@ -293,7 +294,8 @@ def document_module_jobque_boost(root:string)
     var groups <- [{DocGroup
         group_by_regex("Invocations", mod, %regex~(new_job|new_thread)$%%);
         group_by_regex("Iteration", mod, %regex~(for_each|each)$%%);
-        group_by_regex("Passing data", mod, %regex~(push|push_clone)$%%)
+        group_by_regex("Passing data", mod, %regex~(push|push_clone)$%%);
+        group_by_regex("Internal capture details", mod, %regex~(capture_jobque_channel|capture_jobque_job_status|release_capture_jobque_channel|release_capture_jobque_job_status)$%%)
     }]
     document("Boost package for jobs and threads",mod,"{root}/jobque_boost.rst","{root}/detail/jobque_boost.rst",groups)
 
@@ -516,6 +518,20 @@ def document_module_decs_boost(root:string)
     }]
     document("Boost package for DECS",mod,"{root}/decs_boost.rst","{root}/detail/decs_boost.rst",groups)
 
+def document_module_utf8_utils(root:string)
+    var mod = find_module("utf8_utils")
+    var groups <- [{DocGroup
+        group_by_regex("stub", mod, %regex~(stub)$%%)
+    }]
+    document("UTF-8 utilities",mod,"{root}/utf8_utils.rst","{root}/detail/utf8_utils.rst",groups)
+
+def document_module_macro_boost(root:string)
+    var mod = find_module("macro_boost")
+    var groups <- [{DocGroup
+        group_by_regex("Implementation details", mod, %regex~(macro_verify)$%%)
+    }]
+    document("Boost package for the miscelanious macro manipulations",mod,"{root}/macro_boost.rst","{root}/detail/macro_boost.rst",groups)
+
 
 [export]
 def main
@@ -564,6 +580,7 @@ def main
     // document_module_lint(root)                   // todo: document?
     // document_module_live(root)
     document_module_lpipe(root)
+    document_module_macro_boost(root)
     document_module_math_bits(root)
     document_module_math_boost(root)
     document_module_random(root)
@@ -578,3 +595,4 @@ def main
     document_module_templates(root)
     document_module_unroll(root)
     document_module_uriparser_boost(root)
+    document_module_utf8_utils(root)

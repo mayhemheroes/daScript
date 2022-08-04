@@ -11,6 +11,7 @@ require daslib/rtti
 require daslib/ast
 require daslib/ast_boost
 require daslib/templates
+require daslib/macro_boost
 
 [tag_function(new_job_tag)]
 def new_job ( var l : lambda )
@@ -36,17 +37,11 @@ class private NewJobMacro : AstFunctionAnnotation
     //! the call is replaced with `new_job_invoke` and `new_thread_invoke` accordingly.
     //! a cloning infastructure is generated for the lambda, which is invoked in the new context.
     def override transform ( var call : smart_ptr<ExprCallFunc>; var errors : das_string ) : ExpressionPtr
-        if !call.arguments[0] is ExprAscend
-            compiling_program() |>macro_error(call.at,"expecting lambda declaration, ExprAscend")
-            return [[ExpressionPtr]]
+        macro_verify(call.arguments[0] is ExprAscend,compiling_program(),call.at,"expecting lambda declaration, ExprAscend")
         var asc = call.arguments[0] as ExprAscend
-        if !asc.subexpr is ExprMakeStruct
-            compiling_program() |>macro_error(call.at,"expecting lambda declaration, ExprMakeStruct")
-            return [[ExpressionPtr]]
+        macro_verify(asc.subexpr is ExprMakeStruct,compiling_program(),call.at,"expecting lambda declaration, ExprMakeStruct")
         var mks = asc.subexpr as ExprMakeStruct
-        if mks._type==null || mks._type.baseType!=Type tStructure
-            compiling_program() |>macro_error(call.at,"expecting lambda declaration, not a structure")
-            return [[ExpressionPtr]]
+        macro_verify(!(mks._type==null || mks._type.baseType!=Type tStructure),compiling_program(),call.at,"expecting lambda declaration, not a structure")
         // clone structure type. make fields non-constant, so that they can be cloned
         var stype <- clone_structure(mks._type.structType)
         stype.name := "{stype.name}_new_job_clone"
@@ -94,7 +89,7 @@ def push ( channel:Channel?; data : auto? )
     _builtin_channel_push(channel, data)
 
 [template (tinfo)]
-def each ( channel:Channel?; tinfo : auto(TT) )
+def each ( var channel:Channel?; tinfo : auto(TT) )
     //! this iterator is used to iterate over the channel in order it was pushed.
     //! iterator stops once channel is depleted (internal entry counter is 0)
     //! iteration can happen on multiple threads or jobs at the same time.
@@ -103,8 +98,80 @@ def each ( channel:Channel?; tinfo : auto(TT) )
             while true
                 let void_data = _builtin_channel_pop(channel)
                 if void_data==null
-                    return false
+                    break
                 unsafe
                     yield * reinterpret<TT?#> void_data
+            channel |> release
             return false
+
+def public capture_jobque_channel ( ch:Channel? ) : Channel?
+    //! this function is used to capture a channel that is used by the jobque.
+    ch |> add_ref
+    return ch
+
+def public capture_jobque_job_status ( js:JobStatus? ) : JobStatus?
+    //! this function is used to capture a job status that is used by the jobque.
+    js |> add_ref
+    return js
+
+def public release_capture_jobque_channel ( ch:Channel? )
+    //! this function is used to release a channel that is used by the jobque.
+    if ch != null
+        panic("Channel has not been released. missing channel|>release or channel|>notify_and_release")
+
+def public release_capture_jobque_job_status ( js:JobStatus? )
+    //! this function is used to release a job status that is used by the jobque.
+    if js != null
+        panic("JobStatus has not been released. missing status|>release or status|>notify_and_release")
+
+[macro_function]
+def private isPtrToJQ ( typ:TypeDeclPtr; jqt:string ) : bool
+    if !typ.isPointer
+        return false
+    if typ.firstType==null
+        return false
+    if !typ.firstType.isHandle
+        return false
+    if typ.firstType.annotation._module.name!="jobque"
+        return false
+    if typ.firstType.annotation.name!=jqt
+        return false
+    return true
+
+[capture_macro(name=channel_and_status_capture_macro)]
+class private ChannelAndStatusCapture : AstCaptureMacro
+    //! This macro implements capturing of the `jobque::Channel` and `jobque::JobStatus` types.
+    //! When captured reference counts are increased. When lambda is destroyed, reference counts are decreased.
+    def override captureExpression ( prog:Program?; mod:Module?; expr:ExpressionPtr; typ:TypeDeclPtr ) : ExpressionPtr
+        //! Implementation details for the capture macro.
+        if typ |> isPtrToJQ("Channel")
+            var pCall <- new [[ExprCall() at=expr.at, name:="jobque_boost::capture_jobque_channel"]]
+            pCall.arguments |> emplace_new <| clone_expression(expr)
+            return pCall
+        elif typ |> isPtrToJQ("JobStatus")
+            var pCall <- new [[ExprCall() at=expr.at, name:="jobque_boost::capture_jobque_job_status"]]
+            pCall.arguments |> emplace_new <| clone_expression(expr)
+            return pCall
+        return [[ExpressionPtr]]
+    def override captureFunction ( prog:Program?; mod:Module?; var lcs:Structure?; var fun:FunctionPtr ) : void
+        //! Implementation details for the capture macro.
+        if fun.flags._generator // generator gets finally section called every single time. nothing we can do
+            return
+        for fld in lcs.fields
+            if fld._type |> isPtrToJQ("Channel")
+                var pCall <- new [[ExprCall() at=fld.at, name:="jobque_boost::release_capture_jobque_channel"]]
+                pCall.arguments |> emplace_new <| new [[ExprField() at=fld.at,
+                    value <- new [[ExprVar() at=fld.at, name:="__this"]],
+                    name := fld.name,
+                    derefFlags = ExprFieldDerefFlags ignoreCaptureConst
+                ]]
+                (fun.body as ExprBlock).finalList |> emplace(pCall)
+            elif fld._type |> isPtrToJQ("JobStatus")
+                var pCall <- new [[ExprCall() at=fld.at, name:="jobque_boost::release_capture_jobque_job_status"]]
+                pCall.arguments |> emplace_new <| new [[ExprField() at=fld.at,
+                    value <- new [[ExprVar() at=fld.at, name:="__this"]],
+                    name := fld.name,
+                    derefFlags = ExprFieldDerefFlags ignoreCaptureConst
+                ]]
+                (fun.body as ExprBlock).finalList |> emplace(pCall)
 

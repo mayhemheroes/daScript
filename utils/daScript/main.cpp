@@ -109,6 +109,7 @@ bool compile ( const string & fn, const string & cppFn, bool dryRun ) {
                 tw << "#pragma warning(disable:4623)   // default constructor was implicitly defined as deleted\n";
                 tw << "#pragma warning(disable:4946)   // reinterpret_cast used between related classes\n";
                 tw << "#pragma warning(disable:4269)   // 'const' automatic data initialized with compiler generated default constructor produces unreliable results\n";
+                tw << "#pragma warning(disable:4555)   // result of expression not used\n";
                 tw << "#endif\n";
                 tw << "#if defined(__GNUC__) && !defined(__clang__)\n";
                 tw << "#pragma GCC diagnostic push\n";
@@ -136,9 +137,10 @@ bool compile ( const string & fn, const string & cppFn, bool dryRun ) {
                 program->aotCpp(*pctx, tw);
                 daScriptEnvironment::bound->g_Program.reset();
                 // list STUFF
-                tw << "\tstatic void registerAotFunctions ( AotLibrary & aotLib ) {\n";
+                tw << "\nstatic void registerAotFunctions ( AotLibrary & aotLib ) {\n";
                 program->registerAotCpp(tw, *pctx, false);
-                tw << "\t};\n";
+                tw << "\tresolveTypeInfoAnnotations();\n";
+                tw << "};\n";
                 tw << "\n";
                 tw << "AotListBase impl(registerAotFunctions);\n";
                 // validation stuff
@@ -411,6 +413,7 @@ int MAIN_FUNC_NAME ( int argc, char * argv[] ) {
     require_project_specific_modules();
     #include "modules/external_need.inc"
     Module::Initialize();
+    daScriptEnvironment::bound->g_isInAot = true;
     // compile and run
     int failedFiles = 0;
     for ( auto & fn : files ) {

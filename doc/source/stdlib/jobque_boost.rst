@@ -7,7 +7,12 @@ Boost package for jobs and threads
 
 .. include:: detail/jobque_boost.rst
 
-|module-jobque_boost|
+The JOBQUE boost module implements collection of helper macros and functions to accompany :ref:`JOBQUE <stdlib_jobque>`.
+
+All functions and symbols are in "jobque_boost" module, use require to get access to it. ::
+
+    require daslib/jobque_boost
+
 
 ++++++++++++++++++++
 Function annotations
@@ -67,7 +72,7 @@ Iteration
 +++++++++
 
   *  :ref:`for_each (channel:jobque::Channel? const;blk:block\<(res:auto(TT) const#):void\> const) : auto <function-_at_jobque_boost_c__c_for_each_C1_ls_H_ls_jobque_c__c_Channel_gr__gr_?_CN_ls_res_gr_0_ls_C_hh_Y_ls_TT_gr_._gr_1_ls_v_gr__builtin_>` 
-  *  :ref:`each (channel:jobque::Channel? const;tinfo:auto(TT) const) : auto <function-_at_jobque_boost_c__c_each_C1_ls_H_ls_jobque_c__c_Channel_gr__gr_?_CY_ls_TT_gr_.>` 
+  *  :ref:`each (channel:jobque::Channel? -const;tinfo:auto(TT) const) : auto <function-_at_jobque_boost_c__c_each_1_ls_H_ls_jobque_c__c_Channel_gr__gr_?_CY_ls_TT_gr_.>` 
 
 .. _function-_at_jobque_boost_c__c_for_each_C1_ls_H_ls_jobque_c__c_Channel_gr__gr_?_CN_ls_res_gr_0_ls_C_hh_Y_ls_TT_gr_._gr_1_ls_v_gr__builtin_:
 
@@ -88,19 +93,19 @@ reads input from the channel (in order it was pushed) and invokes the block on e
 stops once channel is depleted (internal entry counter is 0)
 this can happen on multiple threads or jobs at the same time.
 
-.. _function-_at_jobque_boost_c__c_each_C1_ls_H_ls_jobque_c__c_Channel_gr__gr_?_CY_ls_TT_gr_.:
+.. _function-_at_jobque_boost_c__c_each_1_ls_H_ls_jobque_c__c_Channel_gr__gr_?_CY_ls_TT_gr_.:
 
-.. das:function:: each(channel: jobque::Channel? const; tinfo: auto(TT) const)
+.. das:function:: each(channel: jobque::Channel?; tinfo: auto(TT) const)
 
 each returns auto
 
-+--------+-------------------------------------------------------+
-+argument+argument type                                          +
-+========+=======================================================+
-+channel + :ref:`jobque::Channel <handle-jobque-Channel>` ? const+
-+--------+-------------------------------------------------------+
-+tinfo   +auto(TT) const                                         +
-+--------+-------------------------------------------------------+
++--------+-------------------------------------------------+
++argument+argument type                                    +
++========+=================================================+
++channel + :ref:`jobque::Channel <handle-jobque-Channel>` ?+
++--------+-------------------------------------------------+
++tinfo   +auto(TT) const                                   +
++--------+-------------------------------------------------+
 
 
 this iterator is used to iterate over the channel in order it was pushed.
@@ -147,5 +152,70 @@ push returns auto
 
 
 pushes value to the channel (at the end)
+
+++++++++++++++++++++++++
+Internal capture details
+++++++++++++++++++++++++
+
+  *  :ref:`capture_jobque_channel (ch:jobque::Channel? const) : jobque::Channel? <function-_at_jobque_boost_c__c_capture_jobque_channel_C1_ls_H_ls_jobque_c__c_Channel_gr__gr_?>` 
+  *  :ref:`capture_jobque_job_status (js:jobque::JobStatus? const) : jobque::JobStatus? <function-_at_jobque_boost_c__c_capture_jobque_job_status_C1_ls_H_ls_jobque_c__c_JobStatus_gr__gr_?>` 
+  *  :ref:`release_capture_jobque_channel (ch:jobque::Channel? const) : void <function-_at_jobque_boost_c__c_release_capture_jobque_channel_C1_ls_H_ls_jobque_c__c_Channel_gr__gr_?>` 
+  *  :ref:`release_capture_jobque_job_status (js:jobque::JobStatus? const) : void <function-_at_jobque_boost_c__c_release_capture_jobque_job_status_C1_ls_H_ls_jobque_c__c_JobStatus_gr__gr_?>` 
+
+.. _function-_at_jobque_boost_c__c_capture_jobque_channel_C1_ls_H_ls_jobque_c__c_Channel_gr__gr_?:
+
+.. das:function:: capture_jobque_channel(ch: jobque::Channel? const)
+
+capture_jobque_channel returns  :ref:`jobque::Channel <handle-jobque-Channel>` ?
+
++--------+-------------------------------------------------------+
++argument+argument type                                          +
++========+=======================================================+
++ch      + :ref:`jobque::Channel <handle-jobque-Channel>` ? const+
++--------+-------------------------------------------------------+
+
+
+this function is used to capture a channel that is used by the jobque.
+
+.. _function-_at_jobque_boost_c__c_capture_jobque_job_status_C1_ls_H_ls_jobque_c__c_JobStatus_gr__gr_?:
+
+.. das:function:: capture_jobque_job_status(js: jobque::JobStatus? const)
+
+capture_jobque_job_status returns  :ref:`jobque::JobStatus <handle-jobque-JobStatus>` ?
+
++--------+-----------------------------------------------------------+
++argument+argument type                                              +
++========+===========================================================+
++js      + :ref:`jobque::JobStatus <handle-jobque-JobStatus>` ? const+
++--------+-----------------------------------------------------------+
+
+
+this function is used to capture a job status that is used by the jobque.
+
+.. _function-_at_jobque_boost_c__c_release_capture_jobque_channel_C1_ls_H_ls_jobque_c__c_Channel_gr__gr_?:
+
+.. das:function:: release_capture_jobque_channel(ch: jobque::Channel? const)
+
++--------+-------------------------------------------------------+
++argument+argument type                                          +
++========+=======================================================+
++ch      + :ref:`jobque::Channel <handle-jobque-Channel>` ? const+
++--------+-------------------------------------------------------+
+
+
+this function is used to release a channel that is used by the jobque.
+
+.. _function-_at_jobque_boost_c__c_release_capture_jobque_job_status_C1_ls_H_ls_jobque_c__c_JobStatus_gr__gr_?:
+
+.. das:function:: release_capture_jobque_job_status(js: jobque::JobStatus? const)
+
++--------+-----------------------------------------------------------+
++argument+argument type                                              +
++========+===========================================================+
++js      + :ref:`jobque::JobStatus <handle-jobque-JobStatus>` ? const+
++--------+-----------------------------------------------------------+
+
+
+this function is used to release a job status that is used by the jobque.
 
 

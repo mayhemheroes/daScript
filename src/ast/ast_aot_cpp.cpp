@@ -481,6 +481,14 @@ namespace das {
                 ss << " };\n";
             }
             ss << "\n";
+            ss << "static void resolveTypeInfoAnnotations()\n{\n";
+            for ( auto & ti : tmn2t ) {
+                auto tinfo = ti.second;
+                if ( tinfo->type==Type::tHandle ) {
+                    ss << "\t" << typeInfoName(ti.second) << ".resolveAnnotation();\n";
+                };
+            }
+            ss << "}\n\n";
             return ss.str();
         }
         string enumInfoName ( EnumInfo * info ) const {
@@ -1970,11 +1978,11 @@ namespace das {
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstInt8 * c ) override {
-            ss << c->getValue();
+            ss << int32_t(c->getValue());
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstInt16 * c ) override {
-            ss << c->getValue();
+            ss << int32_t(c->getValue());
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstInt64 * c ) override {
@@ -1982,11 +1990,11 @@ namespace das {
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstUInt8 * c ) override {
-            ss << "0x" << HEX << c->getValue() << DEC;
+            ss << "0x" << HEX << uint32_t(c->getValue()) << DEC;
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstUInt16 * c ) override {
-            ss << "0x" << HEX << c->getValue() << DEC;
+            ss << "0x" << HEX << uint32_t(c->getValue()) << DEC;
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstUInt64 * c ) override {
@@ -2796,6 +2804,8 @@ namespace das {
                 }
             } else if (call->name == "erase") {
                 ss << "__builtin_table_erase(__context__,";
+            } else if (call->name == "insert") {
+                ss << "__builtin_table_set_insert(__context__,";
             } else if (call->name == "find") {
                 ss << "__builtin_table_find(__context__,";
             } else if (call->name == "key_exists") {

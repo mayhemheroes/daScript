@@ -55,6 +55,9 @@ namespace das
     struct ForLoopMacro;
     typedef smart_ptr<ForLoopMacro> ForLoopMacroPtr;
 
+    struct CaptureMacro;
+    typedef smart_ptr<CaptureMacro> CaptureMacroPtr;
+
     struct AnnotationArgumentList;
 
     //      [annotation (value,value,...,value)]
@@ -265,6 +268,7 @@ namespace das
         LineInfo        at;
         int             index = -1;
         uint32_t        stackTop = 0;
+        uint32_t        extraLocalOffset = 0;   // this is here for fake variables only
         Module *        module = nullptr;
         das_set<Function *> useFunctions;
         das_set<Variable *> useGlobalVariables;
@@ -353,6 +357,7 @@ namespace das
         virtual bool isGeneric() const { return false; }
         virtual bool isCompatible ( const FunctionPtr &, const vector<TypeDeclPtr> &, const AnnotationDeclaration &, string &  ) const { return true; }
         virtual bool isSpecialized() const { return false; }
+        virtual void appendToMangledName( const FunctionPtr &, const AnnotationDeclaration &, string & /* mangledName */ ) const { }
     };
 
     struct TransformFunctionAnnotation : FunctionAnnotation {
@@ -976,7 +981,8 @@ namespace das
         vector<PassMacroPtr>                        lintMacros;         // lint macros (assume read-only)
         vector<PassMacroPtr>                        globalLintMacros;   // lint macros which work everywhere
         vector<VariantMacroPtr>                     variantMacros;      //  X is Y, X as Y expression handler
-        vector<ForLoopMacroPtr>                     forLoopMacros;
+        vector<ForLoopMacroPtr>                     forLoopMacros;      // for loop macros (for every for loop)
+        vector<CaptureMacroPtr>                     captureMacros;      // lambda capture macros
         das_map<string,ReaderMacroPtr>              readMacros;         // %foo "blah"
         CommentReaderPtr                            commentReader;      // /* blah */ or // blah
         string  name;
@@ -1080,6 +1086,7 @@ namespace das
         virtual void preVisit (  Program *, Module *, ExprCallMacro * ) { }
         virtual ExpressionPtr visit (  Program *, Module *, ExprCallMacro * ) { return nullptr; }
         virtual void seal( Module * m ) { module = m; }
+        virtual bool canVisitArguments ( ExprCallMacro * ) { return true; }
         string name;
         Module * module = nullptr;
     };
@@ -1088,6 +1095,13 @@ namespace das
     struct ForLoopMacro : ptr_ref_count {
         ForLoopMacro ( const string & na = "" ) : name(na) {}
         virtual ExpressionPtr visit ( Program *, Module *, ExprFor * ) { return nullptr; }
+        string name;
+    };
+
+    struct CaptureMacro : ptr_ref_count {
+        CaptureMacro ( const string & na = "" ) : name(na) {}
+        virtual ExpressionPtr captureExpression ( Program *, Module *, Expression *, TypeDecl * ) { return nullptr; }
+        virtual void captureFunction ( Program *, Module *, Structure *, Function * ) { }
         string name;
     };
 
@@ -1130,6 +1144,7 @@ namespace das
     struct CodeOfPolicies {
         bool        aot = false;                        // enable AOT
         bool        aot_module = false;                 // this is how AOT tool knows module is module, and not an entry point
+        bool        completion = false;                 // this code is being compiled for 'completion' mode
     // memory
         uint32_t    stack = 16*1024;                    // 0 for unique stack
         bool        intern_strings = false;             // use string interning lookup for regular string heap
@@ -1239,7 +1254,7 @@ namespace das
         bool simulate ( Context & context, TextWriter & logs, StackAllocator * sharedStack = nullptr );
         uint64_t getInitSemanticHashWithDep( uint64_t initHash ) const;
         void error ( const string & str, const string & extra, const string & fixme, const LineInfo & at, CompilationError cerr = CompilationError::unspecified );
-        bool failed() const { return failToCompile; }
+        bool failed() const { return failToCompile || macroException; }
         static ExpressionPtr makeConst ( const LineInfo & at, const TypeDeclPtr & type, vec4f value );
         ExprLooksLikeCall * makeCall ( const LineInfo & at, const string & name );
         ExprLooksLikeCall * makeCall ( const LineInfo & at, const LineInfo & atEnd, const string & name );
@@ -1303,6 +1318,7 @@ namespace das
                 bool    needMacroModule : 1;
                 bool    promoteToBuiltin : 1;
                 bool    isDependency : 1;
+                bool    macroException : 1;
             };
             uint32_t    flags = 0;
         };

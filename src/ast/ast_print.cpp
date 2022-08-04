@@ -481,7 +481,7 @@ namespace das {
     // if then else
         virtual void preVisit ( ExprIfThenElse * ifte ) override {
             Visitor::preVisit(ifte);
-            ss << "if ";
+            ss << (ifte->isStatic ? "static_if " : "if ");
         }
         virtual void preVisitIfBlock ( ExprIfThenElse * ifte, Expression * block ) override {
             Visitor::preVisitIfBlock(ifte,block);
@@ -491,9 +491,9 @@ namespace das {
             Visitor::preVisitElseBlock(ifte, block);
             ss << string(tab,'\t');
             if (block && block->rtti_isIfThenElse()) {
-                ss << "else ";
+                ss << (ifte->isStatic ? "static_else " : "else ");
             } else {
-                ss << "else\n";
+                ss << (ifte->isStatic ? "static_else\n" : "else\n");
             }
         }
     // try-catch
@@ -539,6 +539,19 @@ namespace das {
         virtual void preVisit ( ExprAssume * wh ) override {
             Visitor::preVisit(wh);
             ss << "with " << wh->alias << " = ";
+        }
+    // tag
+        virtual void preVisit ( ExprTag * expr ) override {
+            Visitor::preVisit(expr);
+            ss << "$$" << expr->name << "(";
+        }
+        virtual void preVisitTagValue ( ExprTag * expr, Expression * value ) override {
+            Visitor::preVisitTagValue(expr,value);
+            ss << ")(";
+        }
+        virtual ExpressionPtr visit ( ExprTag * expr ) override {
+            ss << ")";
+            return Visitor::visit(expr);
         }
     // while
         virtual void preVisit ( ExprWhile * wh ) override {
@@ -641,19 +654,19 @@ namespace das {
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstInt8 * c ) override {
-            ss << c->getValue();
+            ss << int32_t(c->getValue());
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstUInt8 * c ) override {
-            ss << "0x" << HEX << c->getValue() << DEC;
+            ss << "0x" << HEX << uint32_t(c->getValue()) << DEC;
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstInt16 * c ) override {
-            ss << c->getValue();
+            ss << int32_t(c->getValue());
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstUInt16 * c ) override {
-            ss << "0x" << HEX << c->getValue() << DEC;
+            ss << "0x" << HEX << uint32_t(c->getValue()) << DEC;
             return Visitor::visit(c);
         }
         virtual ExpressionPtr visit ( ExprConstInt64 * c ) override {
@@ -1124,6 +1137,15 @@ namespace das {
         }
         virtual ExpressionPtr visit ( ExprArrayComprehension * expr ) override {
             ss << (expr->generatorSyntax ? "]]" : "}]");
+            return Visitor::visit(expr);
+        }
+    // quote
+        virtual void preVisit ( ExprQuote * expr ) override {
+            Visitor::preVisit(expr);
+            ss << "quote(";
+        }
+        virtual ExpressionPtr visit ( ExprQuote * expr ) override {
+            ss << ")";
             return Visitor::visit(expr);
         }
     protected:

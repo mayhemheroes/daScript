@@ -501,6 +501,11 @@ def mark_token_context(var ctx: FormatterCtx)
                 if ctx |> eq(j, "=")
                     ctx.tokens[j].dontAddSpacesAround = true
 
+    let macroEscapes <- {{ /*ident*/"i"; /*value*/"v"; /*expr*/"e"; /*call*/"c"; /*type*/"t"; /*field*/"f"; /*block*/"b"; /*array*/"a" }}
+    for i in range(1, length(ctx.tokens))
+        if !new_line_before(ctx, i) && ctx |> eq(i - 1, "$") && key_exists(macroEscapes, ctx.tokens[i].str)
+            ctx.tokens[i - 1].dontAddSpacesAround = true
+
 
 def fmt_function_arguments(var ctx: FormatterCtx)
     // function arguments
@@ -732,6 +737,12 @@ def fmt_remove_space_inside_parens(var ctx: FormatterCtx)
             ctx |> remove_space_before(i)
 
 
+def fmt_remove_space_before_as(var ctx: FormatterCtx)
+    for i in range(1, length(ctx.tokens))
+        if !new_line_before(ctx, i) && ctx |> eq(i, "as") && ctx |> eq(i - 1, "?")
+            ctx |> remove_space_before(i)
+
+
 let type_specifiers = [[string "-"; "?"; "&"; "#"]]
 
 def fmt_glue_type_specifiers(var ctx: FormatterCtx)
@@ -770,6 +781,7 @@ def do_format(var ctx: FormatterCtx)
     ctx |> fmt_remove_space_before_comma()
     ctx |> fmt_remove_space_before_semicolon()
     ctx |> fmt_remove_space_inside_parens()
+    ctx |> fmt_remove_space_before_as()
     ctx |> fmt_glue_type_specifiers()
     ctx |> fmt_space_after_keyword()
     ctx |> fmt_space_after_paren()

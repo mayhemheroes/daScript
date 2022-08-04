@@ -25,6 +25,9 @@ MAKE_TYPE_FACTORY(clock, das::Time)// use MAKE_TYPE_FACTORY out of namespace. So
     #define MAP_PRIVATE 0x02        /* Changes are private.  */
     void* mmap(void* start, size_t length, int prot, int flags, int fd, off_t offset);
     int munmap(void* start, size_t length);
+    static int getchar_wrapper(void) { return getchar(); } // workaround for non-std callconv (fastcall, vectorcall...)
+#else
+#define getchar_wrapper getchar
 #endif
 
 namespace das {
@@ -145,11 +148,6 @@ namespace das {
         virtual bool canMove() const override { return true; }
         virtual bool canCopy() const override { return true; }
         virtual bool isLocal() const override { return true; }
-    };
-
-    struct FileAnnotation : ManagedStructureAnnotation <FILE,false> {
-        FileAnnotation(ModuleLibrary & ml) : ManagedStructureAnnotation ("FILE", ml) {
-        }
     };
 
 
@@ -405,6 +403,8 @@ namespace das {
         if ( path ) {
 #if defined(_MSC_VER)
             return _mkdir(path) == 0;
+#elif defined(_EMSCRIPTEN_VER)
+            return mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0;
 #else
             return mkdir(path, ACCESSPERMS) == 0;
 #endif
@@ -451,7 +451,7 @@ namespace das {
             lib.addBuiltInModule();
             lib.addModule(Module::require("strings"));
             // type
-            addAnnotation(make_smart<FileAnnotation>(lib));
+            addAnnotation(make_smart<DummyTypeAnnotation>("FILE", "FILE", 16, 16));
             addAnnotation(make_smart<FStatAnnotation>(lib));
             // seek constants
             addConstant<int32_t>(*this, "seek_set", SEEK_SET);
@@ -525,7 +525,7 @@ namespace das {
             addExtern<DAS_BIND_FUN(builtin_sleep)>(*this, lib, "sleep",
                 SideEffects::modifyExternal, "builtin_sleep")
                     ->arg("msec");
-            addExtern<DAS_BIND_FUN(getchar)>(*this, lib, "getchar",
+            addExtern<DAS_BIND_FUN(getchar_wrapper)>(*this, lib, "getchar",
                 SideEffects::modifyExternal, "getchar");
             addExtern<DAS_BIND_FUN(builtin_exit)>(*this, lib, "exit",
                 SideEffects::modifyExternal, "builtin_exit")
