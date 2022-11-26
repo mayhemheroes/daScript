@@ -11,7 +11,7 @@ RUN chmod +x ./generate_gcc_linux_min.sh
 RUN ./generate_gcc_linux_min.sh
 WORKDIR /repo/cmake_temp
 RUN make -j8
-RUN clang++ /repo/mayhem/fuzz_dascript.cpp -fsanitize=fuzzer,address -L /repo/cmake_temp/ -llibDaScript -o /fuzz
+RUN clang++ /repo/mayhem/fuzz_isUtf8Text.cpp -fsanitize=fuzzer,address -L /repo/cmake_temp/ -llibDaScript -o /fuzz
 
 FROM ubuntu:22.04 as package
 COPY --from=builder /repo/bin/daScript /
