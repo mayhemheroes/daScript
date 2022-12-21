@@ -1197,7 +1197,7 @@ namespace das {
 
     ExpressionPtr ExprMakeBlock::visit(Visitor & vis) {
         vis.preVisit(this);
-        block = block->visit(vis);
+        if ( vis.canVisitMakeBlockBody(this) ) block = block->visit(vis);
         return vis.visit(this);
     }
 
@@ -1473,7 +1473,8 @@ namespace das {
         for ( const auto & ex :lst ) {
             if ( ex->rtti_isBlock() ) {
                 auto blk = static_pointer_cast<ExprBlock>(ex);
-                if ( blk->isCollapseable && blk->finalList.empty() ) {
+                // note: no need to check for `isCollapseable'. typically needCollapse is sufficient
+                if ( /* blk->isCollapseable && */ blk->finalList.empty() ) {
                     collapse(res, blk->list);
                 } else {
                     res.push_back(ex);
@@ -1548,6 +1549,11 @@ namespace das {
             }
             arg = vis.visitBlockArgument(this, arg, arg==arguments.back());
             if ( arg ) ++it; else it = arguments.erase(it);
+        }
+        if ( returnType ) {
+            vis.preVisit(returnType.get());
+            returnType = returnType->visit(vis);
+            returnType = vis.visit(returnType.get());
         }
         if ( finallyBeforeBody ) {
             visitFinally(vis);
@@ -1966,9 +1972,9 @@ namespace das {
     ExpressionPtr ExprMove::clone( const ExpressionPtr & expr ) const {
         auto cexpr = clonePtr<ExprMove>(expr);
         ExprOp2::clone(cexpr);
+        cexpr->moveFlags = moveFlags;
         return cexpr;
     }
-
 
     // ExprClone
 
@@ -2208,6 +2214,8 @@ namespace das {
         cexpr->iterators = iterators;
         cexpr->iteratorsAka = iteratorsAka;
         cexpr->iteratorsAt = iteratorsAt;
+        for ( auto tag : iteratorsTags )
+            cexpr->iteratorsTags.push_back(tag ? tag->clone() : nullptr);
         cexpr->visibility = visibility;
         for ( auto & src : sources )
             cexpr->sources.push_back(src->clone());
@@ -2899,6 +2907,7 @@ namespace das {
     }
 
     void Program::visitModule(Visitor & vis, Module * thatModule, bool visitGenerics) {
+        vis.preVisitModule(thatModule);
         // enumerations
         thatModule->enumerations.foreach([&](auto & penum){
             if ( vis.canVisitEnumeration(penum.get()) ) {
@@ -2983,6 +2992,7 @@ namespace das {
                 }
             }
         });
+        vis.visitModule(thatModule);
     }
 
     bool Program::getOptimize() const {
@@ -2991,6 +3001,10 @@ namespace das {
 
     bool Program::getDebugger() const {
         return policies.debugger || options.getBoolOption("debugger",false);
+    }
+
+    bool Program::getProfiler() const {
+        return policies.profiler || options.getBoolOption("profiler",false);
     }
 
     void Program::optimize(TextWriter & logs, ModuleGroup & libGroup) {

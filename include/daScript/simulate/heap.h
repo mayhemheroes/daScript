@@ -117,7 +117,7 @@ namespace das {
         __forceinline bool is_stack_ptr ( char * p ) const {
             return (stack<=p) && (p<=(stack + stackSize));
         }
-    protected:
+    public:
         char *      stack = nullptr;
         char *      evalTop = nullptr;
         char *      stackTop = nullptr;
@@ -171,7 +171,7 @@ namespace das {
 
     struct StrHashPred {
         __forceinline size_t operator() ( const StrHashEntry & a ) const {
-            return hash_block64((const uint8_t *)a.ptr, a.length);
+            return (size_t) hash_block64((const uint8_t *)a.ptr, a.length);
         }
     };
 

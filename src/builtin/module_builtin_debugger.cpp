@@ -126,10 +126,10 @@ namespace debugapi {
                 context->unlock();
             }
         }
-        virtual void onCollect ( Context * ctx ) override {
+        virtual void onCollect ( Context * ctx, const LineInfo & at ) override {
             if ( auto fnOnCollect = get_onCollect(classPtr) ) {
                 context->lock();
-                invoke_onCollect(context,fnOnCollect,classPtr,*ctx);
+                invoke_onCollect(context,fnOnCollect,classPtr,*ctx,at);
                 context->unlock();
             }
         }
@@ -141,6 +141,13 @@ namespace debugapi {
                 return res;
             } else {
                 return false;
+            }
+        }
+        virtual void onBreakpointsReset ( const char * file, int breakpointsNum ) override {
+            if ( auto fnOnBreakpointsReset = get_onBreakpointsReset(classPtr) ) {
+                context->lock();
+                invoke_onBreakpointsReset(context,fnOnBreakpointsReset,classPtr,(char *)file, breakpointsNum);
+                context->unlock();
             }
         }
     protected:
@@ -643,13 +650,13 @@ namespace debugapi {
             Prologue * pp = (Prologue *) sp;
             Block * block = nullptr;
             FuncInfo * info = nullptr;
-            char * SP = sp;
+            // char * SP = sp;
             if ( pp->info ) {
                 intptr_t iblock = intptr_t(pp->block);
                 if ( iblock & 1 ) {
                     block = (Block *) (iblock & ~1);
                     info = block->info;
-                    SP = context.stack.bottom() + block->stackOffset;
+                    // SP = context.stack.bottom() + block->stackOffset;
                 } else {
                     info = pp->info;
                 }
@@ -836,6 +843,13 @@ namespace debugapi {
         return cast<void *>::from(ctx->getVariable(vidx));
     }
 
+    vec4f get_global_variable_by_index ( Context & context, SimNode_CallBase * node, vec4f * args ) {
+        auto ctx = cast<Context *>::to(args[0]);
+        if ( ctx==nullptr ) context.throw_error_at(node->debugInfo, "expecting context pointer");
+        auto vidx = cast<int32_t>::to(args[1]);
+        return cast<void *>::from(ctx->getVariable(vidx));
+    }
+
     void instrument_context ( Context & ctx, bool isInstrumenting, const TBlock<bool,LineInfo> & blk, Context * context, LineInfoArg * line ) {
         ctx.instrumentContextNode(blk, isInstrumenting, context, line);
     }
@@ -882,8 +896,8 @@ namespace debugapi {
         switch ( size ) {
         case 1: sz = HwBpSize::HwBp_1; break;
         case 2: sz = HwBpSize::HwBp_2; break;
-        case 4: sz = HwBpSize::HwBp_4; break;
-        case 8: sz = HwBpSize::HwBp_8; break;
+        case 3: case 4: sz = HwBpSize::HwBp_4; break;
+        case 5: case 6: case 7: case 8: sz = HwBpSize::HwBp_8; break;
         default:    return -1;
         }
         if ( !hw_bp_handler_set ) hwSetBreakpointHandler(hw_bp_handler);
@@ -924,7 +938,10 @@ namespace debugapi {
                     ->arg("agent");
             addExtern<DAS_BIND_FUN(collectDebugAgentState)>(*this, lib,  "collect_debug_agent_state",
                 SideEffects::modifyExternal, "collectDebugAgentState")
-                    ->arg("context");
+                    ->args({"context","at"});
+            addExtern<DAS_BIND_FUN(onBreakpointsReset)>(*this, lib,  "on_breakpoints_reset",
+                SideEffects::modifyExternal, "onBreakpointsReset")
+                ->args({"file", "breakpointsNum"});
             addExtern<DAS_BIND_FUN(installDebugAgent)>(*this, lib,  "install_debug_agent",
                 SideEffects::modifyExternal, "installDebugAgent")
                     ->args({"agent","category","line","context"});
@@ -988,6 +1005,9 @@ namespace debugapi {
             addInterop<get_global_variable,void *,vec4f,const char *>(*this,lib,"get_context_global_variable",
                 SideEffects::accessExternal,"get_global_variable")
                     ->args({"context","name"})->unsafeOperation = true;
+            addInterop<get_global_variable_by_index,void *,vec4f,int32_t>(*this,lib,"get_context_global_variable",
+                SideEffects::accessExternal,"get_global_variable")
+                    ->args({"context","index"})->unsafeOperation = true;
             // has function
             addExtern<DAS_BIND_FUN(has_function)>(*this, lib,  "has_function",
                 SideEffects::none, "has_function")
@@ -1071,6 +1091,10 @@ namespace debugapi {
                     ->args({"context","address","size","writeOnly"})->unsafeOperation = true;
             addExtern<DAS_BIND_FUN(clear_hw_breakpoint)>(*this, lib,  "clear_hw_breakpoint",
                 SideEffects::modifyExternal, "clear_hw_breakpoint")->unsafeOperation = true;
+            // heap
+            addExtern<DAS_BIND_FUN(heap_stats)>(*this, lib, "get_heap_stats",
+                SideEffects::modifyArgumentAndAccessExternal, "heap_stats")
+                    ->args({"context","bytes"})->unsafeOperation = true;
             // add builtin module
             compileBuiltinModule("debugger.das",debugger_das,sizeof(debugger_das));
             // lets make sure its all aot ready

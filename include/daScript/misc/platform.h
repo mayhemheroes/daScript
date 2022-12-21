@@ -73,6 +73,12 @@
 #include <float.h>
 #include <daScript/das_config.h>
 
+#if (defined(_MSC_VER) || defined(__clang__)) && __SSE__
+    #define DAS_EVAL_ABI __vectorcall
+#else
+    #define DAS_EVAL_ABI
+#endif
+
 #ifndef _MSC_VER
     #define __forceinline inline __attribute__((always_inline))
     #define ___noinline __attribute__((noinline))
@@ -112,8 +118,56 @@
         _BitScanReverse(&r, x);
         return uint32_t(31 - r);
     }
+    __forceinline uint32_t das_ctz(uint32_t x) {
+        unsigned long r = 0;
+        _BitScanForward(&r, x);
+        return uint32_t(r);
+    }
+    __forceinline uint64_t das_clz64(uint64_t x) {
+        unsigned long r = 0;
+    #if defined(__i386__) || defined(_M_IX86)
+        if ( x >> 32 ) {
+            _BitScanReverse(&r, (unsigned long)(x >> 32));
+            r += 32;
+        } else {
+            _BitScanReverse(&r, (unsigned long)x);
+        }
+    #else
+        _BitScanReverse64(&r, x);
+    #endif
+        return uint64_t(63 - r);
+    }
+    __forceinline uint64_t das_ctz64(uint64_t x) {
+        unsigned long r = 0;
+    #if defined(__i386__) || defined(_M_IX86)
+        if ((uint32_t)x != 0) {
+            _BitScanForward(&r, (unsigned long)x);
+        } else {
+            _BitScanForward(&r, (unsigned long)(x >> 32));
+            r += 32;
+        }
+    #else
+        _BitScanForward64(&r, x);
+    #endif
+        return uint64_t(r);
+    }
+    __forceinline uint32_t das_popcount(uint32_t x) {
+        return uint32_t(__popcnt(x));
+    }
+    __forceinline uint64_t das_popcount64(uint64_t x) {
+    #if defined(__i386__) || defined(_M_IX86)
+        return uint64_t(__popcnt(uint32_t(x)) + __popcnt(uint32_t(x >> 32)));
+    #else
+        return uint64_t(__popcnt64(x));
+    #endif
+    }
 #else
     #define das_clz __builtin_clz
+    #define das_ctz __builtin_ctz
+    #define das_clz64 __builtin_clzll
+    #define das_ctz64 __builtin_ctzll
+    #define das_popcount __builtin_popcount
+    #define das_popcount64 __builtin_popcountll
 #endif
 
 #ifdef _MSC_VER
@@ -229,6 +283,18 @@ inline size_t das_aligned_memsize(void * ptr){
 
 #ifndef DAS_THREAD_LOCAL
 #define DAS_THREAD_LOCAL  thread_local
+#endif
+
+#ifndef DAS_AOT_INLINE_LAMBDA
+    #ifdef _MSC_VER
+        #if __cplusplus >= 202002L
+            #define DAS_AOT_INLINE_LAMBDA [[msvc::forceinline]]
+        #else
+            #define DAS_AOT_INLINE_LAMBDA
+        #endif
+    #else
+        #define DAS_AOT_INLINE_LAMBDA __attribute__((always_inline))
+    #endif
 #endif
 
 #include "daScript/misc/smart_ptr.h"

@@ -33,7 +33,7 @@ namespace das {
         } else if ( expr->rtti_isBlock() ) {
             auto block = static_pointer_cast<ExprBlock>(expr);
             for ( auto & be : block->list ) {
-                if ( be->rtti_isBreak() ) {
+                if ( be->rtti_isBreak() || be->rtti_isContinue() ) {
                     break;
                 }
                 if ( exprReturns(be) ) {
@@ -57,6 +57,40 @@ namespace das {
         } else if ( expr->rtti_isUnsafe() ) {
             auto us = static_pointer_cast<ExprUnsafe>(expr);
             return exprReturns(us->body);
+        }
+        return false;
+    }
+
+   bool exprReturnsOrBreaks ( const ExpressionPtr & expr ) {
+        if ( expr->rtti_isReturn() ) {
+            return true;
+        } else if ( expr->rtti_isBlock() ) {
+            auto block = static_pointer_cast<ExprBlock>(expr);
+            for ( auto & be : block->list ) {
+                if ( be->rtti_isBreak() || be->rtti_isContinue() ) {
+                    return true;
+                }
+                if ( exprReturnsOrBreaks(be) ) {
+                    return true;
+                }
+            }
+        } else if ( expr->rtti_isIfThenElse() ) {
+            auto ite = static_pointer_cast<ExprIfThenElse>(expr);
+            if ( ite->if_false ) {
+                return exprReturnsOrBreaks(ite->if_true) && exprReturnsOrBreaks(ite->if_false);
+            }
+        } else if ( expr->rtti_isWith() ) {
+            auto wth = static_pointer_cast<ExprWith>(expr);
+            return exprReturnsOrBreaks(wth->body);
+        } else if ( expr->rtti_isWhile() ) {
+            auto wh = static_pointer_cast<ExprWhile>(expr);
+            return exprReturns(wh->body);   // note has its own break
+        } else if ( expr->rtti_isFor() ) {
+            auto fr = static_pointer_cast<ExprFor>(expr);
+            return exprReturns(fr->body);   // note has its own break
+        } else if ( expr->rtti_isUnsafe() ) {
+            auto us = static_pointer_cast<ExprUnsafe>(expr);
+            return exprReturnsOrBreaks(us->body);
         }
         return false;
     }
@@ -105,6 +139,16 @@ namespace das {
                     program->error(_func->describe() + " has no cppName while onlyFastAot option is set", "", "", at,
                                    CompilationError::only_fast_aot_no_cpp_name );
                 }
+            }
+        }
+        bool isValidModuleName(const string & str) const {
+            return !isCppKeyword(str);
+        }
+        virtual void preVisitModule ( Module * mod ) override {
+            Visitor::preVisitModule(mod);
+            if ( !mod->name.empty() && !isValidModuleName(mod->name) ) {
+                program->error("invalid module name " + mod->name, "", "",
+                    LineInfo(), CompilationError::invalid_name );
             }
         }
         bool isValidEnumName(const string & str) const {
@@ -480,6 +524,7 @@ namespace das {
         "log",                          Type::tBool,
         "log_optimization_passes",      Type::tBool,
         "log_stack",                    Type::tBool,
+        "log_init",                     Type::tBool,
         "log_symbol_use",               Type::tBool,
         "log_var_scope",                Type::tBool,
         "log_nodes",                    Type::tBool,
@@ -512,7 +557,11 @@ namespace das {
         "max_infer_passes",             Type::tInt,
         "indenting",                    Type::tInt,
     // debugger
-        "debugger",                     Type::tBool
+        "debugger",                     Type::tBool,
+    // profiler
+        "profiler",                     Type::tBool,
+    // runtime checks
+        "skip_lock_checks",             Type::tBool
     };
 
     void verifyOptions() {
@@ -520,17 +569,18 @@ namespace das {
         for ( const auto & opt : g_allOptions ) {
             if ( !isValidBuiltinName(opt.name) ) {
                 DAS_FATAL_ERROR("%s - invalid option. expecting snake_case\n", opt.name);
+                failed = true;
             }
         }
-        DAS_ASSERTF(!failed, "verifyOptions failed");
+        DAS_VERIFYF(!failed, "verifyOptions failed");
     }
 
     void Program::lint ( ModuleGroup & libGroup ) {
         if (!options.getBoolOption("lint", true)) {
             return;
         }
-        TextWriter logs;
-        buildAccessFlags(logs);
+        // note: build access flags is now called before patchAnnotations, and is no longer needed in lint
+        // TextWriter logs; buildAccessFlags(logs);
         checkSideEffects();
         // lint it
         LintVisitor lintV(this);

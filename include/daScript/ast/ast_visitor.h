@@ -35,9 +35,13 @@ namespace das {
         virtual bool canVisitArgumentInit ( Function * fun, const VariablePtr & var, Expression * init ) { return true; }
         virtual bool canVisitQuoteSubexpression ( ExprQuote * ) { return false; }
         virtual bool canVisitWithAliasSubexpression ( ExprAssume * ) { return false; }
+        virtual bool canVisitMakeBlockBody ( ExprMakeBlock * expr ) { return true; }
         // WHOLE PROGRAM
         virtual void preVisitProgram ( Program * prog ) {}
         virtual void visitProgram ( Program * prog ) {}
+        // EACH MODULE
+        virtual void preVisitModule ( Module * mod ) {}
+        virtual void visitModule ( Module * mod ) {}
         // TYPE
         virtual void preVisit ( TypeDecl * td ) {}
         virtual TypeDeclPtr visit ( TypeDecl * td ) { return td; }
@@ -305,13 +309,14 @@ namespace das {
             ctx.thisHelper = &helper;
             ctx.heap = make_smart<LinearHeapAllocator>();
             ctx.stringHeap = make_smart<LinearStringAllocator>();
+            ctx.category = uint32_t(ContextCategory::folding_context);
             helper.rtti = true;
         }
     protected:
         Context         ctx;
         DebugInfoHelper helper;
     protected:
-        vec4f eval ( Expression * expr, bool & failed );
+        vec4f DAS_EVAL_ABI eval ( Expression * expr, bool & failed );
         ExpressionPtr evalAndFold ( Expression * expr );
         ExpressionPtr evalAndFoldString ( Expression * expr );
         ExpressionPtr evalAndFoldStringBuilder ( ExprStringBuilder * expr );

@@ -71,6 +71,10 @@ using das_safe_set = std::set<K,C>;
   #define DAS_SLOW_CALL_INTEROP 0
 #endif
 
+#ifndef DAS_MAX_FUNCTION_ARGUMENTS
+#define DAS_MAX_FUNCTION_ARGUMENTS 32
+#endif
+
 #ifndef DAS_FUSION
   #define DAS_FUSION  0
 #endif
@@ -101,4 +105,10 @@ using das_safe_set = std::set<K,C>;
 #endif
 
 
+#ifndef das_to_stdout
+#define das_to_stdout(...) { fprintf(stdout, __VA_ARGS__); fflush(stdout); }
+#endif
 
+#ifndef das_to_stderr
+#define das_to_stderr(...) { fprintf(stderr, __VA_ARGS__); fflush(stderr); }
+#endif

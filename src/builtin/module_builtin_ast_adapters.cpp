@@ -121,6 +121,7 @@ namespace das {
         // adapt
         IMPL_ADAPT(Program);
         FN_PREVISIT(ProgramBody) = adapt("preVisitProgramBody",pClass,info);
+        IMPL_ADAPT(Module);
         IMPL_ADAPT(TypeDecl);
         IMPL_ADAPT(Expression);
         IMPL_ADAPT(Alias);
@@ -178,6 +179,7 @@ namespace das {
         FN_PREVISIT(ExprMoveRight) = adapt("preVisitExprMoveRight",pClass,info);
         IMPL_ADAPT(ExprClone);
         FN_PREVISIT(ExprCloneRight) = adapt("preVisitExprCloneRight",pClass,info);
+        fnCanVisitWithAliasSubexpression = adapt("canVisitWithAliasSubexpression",pClass,info);
         IMPL_ADAPT(ExprAssume);
         IMPL_ADAPT(ExprWith);
         FN_PREVISIT(ExprWithBody) = adapt("preVisitExprWithBody",pClass,info);
@@ -269,6 +271,7 @@ namespace das {
         IMPL_ADAPT(ExprConstFloat4);
         IMPL_ADAPT(ExprConstString);
         IMPL_ADAPT(ExprConstDouble);
+        fnCanVisitMakeBlockBody = adapt("canVisitMakeBlockBody",pClass,info);
         IMPL_ADAPT(ExprMakeBlock);
         IMPL_ADAPT(ExprMakeGenerator);
         IMPL_ADAPT(ExprMemZero);
@@ -283,6 +286,11 @@ namespace das {
         { IMPL_VISIT_VOID(Program); }
     void VisitorAdapter::preVisitProgramBody ( Program * expr, Module * mod )
         { IMPL_PREVISIT2(ProgramBody,Program,Module *,mod); }
+// module
+    void VisitorAdapter::preVisitModule ( Module * expr )
+        { IMPL_PREVISIT(Module); }
+    void VisitorAdapter::visitModule ( Module * expr )
+        { IMPL_VISIT_VOID(Module); }
 // type
     void VisitorAdapter::preVisit ( TypeDecl * expr )
         { IMPL_PREVISIT(TypeDecl); }
@@ -302,7 +310,6 @@ namespace das {
             return true;
         }
     }
-
     void VisitorAdapter::preVisit ( Enumeration * expr )
         { IMPL_PREVISIT(Enumeration); }
     EnumerationPtr VisitorAdapter::visit ( Enumeration * expr )
@@ -497,6 +504,14 @@ namespace das {
         { IMPL_PREVISIT2(ExprCloneRight,ExprClone,ExpressionPtr,right); }
 // assume
     IMPL_BIND_EXPR(ExprAssume);
+    bool VisitorAdapter::canVisitWithAliasSubexpression ( ExprAssume * expr) {
+        if ( fnCanVisitWithAliasSubexpression ) {
+            return das_invoke_function<bool>::invoke<void *,ExprAssume *>
+                (context,nullptr,fnCanVisitWithAliasSubexpression,classPtr,expr);
+        } else {
+            return Visitor::canVisitWithAliasSubexpression(expr);
+        }
+     }
 // with
     IMPL_BIND_EXPR(ExprWith);
     void VisitorAdapter::preVisitWithBody ( ExprWith * expr, Expression * body )
@@ -644,6 +659,15 @@ namespace das {
     IMPL_BIND_EXPR(ExprConstFloat4);
     IMPL_BIND_EXPR(ExprConstString);
     IMPL_BIND_EXPR(ExprConstDouble);
+// make block
+    bool VisitorAdapter::canVisitMakeBlockBody ( ExprMakeBlock * expr ) {
+        if ( fnCanVisitMakeBlockBody ) {
+            return das_invoke_function<bool>::invoke<void *,smart_ptr<ExprMakeBlock>>
+                (context,nullptr,fnCanVisitMakeBlockBody,classPtr,expr);
+        } else {
+            return true;
+        }
+    }
     IMPL_BIND_EXPR(ExprMakeBlock);
     IMPL_BIND_EXPR(ExprMakeGenerator);
     IMPL_BIND_EXPR(ExprMemZero);
@@ -730,6 +754,18 @@ namespace das {
                 bool result = true;
                 runMacroFunction(context, "apply", [&]() {
                     result = invoke_apply(context,fnApply,classPtr,func,group,args,errors);
+                });
+                return result;
+            } else {
+                return true;
+            }
+        }
+        virtual bool generic_apply ( const FunctionPtr & func, ModuleGroup & group,
+                            const AnnotationArgumentList & args, string & errors ) override {
+            if ( auto fnApply = get_generic_apply(classPtr) ) {
+                bool result = true;
+                runMacroFunction(context, "generic_apply", [&]() {
+                    result = invoke_generic_apply(context,fnApply,classPtr,func,group,args,errors);
                 });
                 return result;
             } else {
@@ -917,6 +953,28 @@ namespace das {
                 });
             }
         }
+        virtual void aotPrefix ( const StructurePtr & st, const AnnotationArgumentList & args,TextWriter & writer ) override {
+            if ( auto fnAotPrefix = get_aotPrefix(classPtr) ) {
+                runMacroFunction(context, "aotPrefix", [&]() {
+                    invoke_aotPrefix(context,fnAotPrefix,classPtr,st,args,reinterpret_cast<StringBuilderWriter&>(writer));
+                });
+            }
+        }
+        virtual void aotBody  ( const StructurePtr & st, const AnnotationArgumentList & args, TextWriter & writer ) override {
+            if ( auto fnAotBody = get_aotBody(classPtr) ) {
+                runMacroFunction(context, "aotBody", [&]() {
+                    invoke_aotBody(context,fnAotBody,classPtr,st,args,reinterpret_cast<StringBuilderWriter&>(writer));
+                });
+            }
+
+        }
+        virtual void aotSuffix ( const StructurePtr & st, const AnnotationArgumentList & args,TextWriter & writer ) override {
+            if ( auto fnAotSuffix = get_aotSuffix(classPtr) ) {
+                runMacroFunction(context, "aotSuffix", [&]() {
+                    invoke_aotSuffix(context,fnAotSuffix,classPtr,st,args,reinterpret_cast<StringBuilderWriter&>(writer));
+                });
+            }
+        }
     protected:
         void *      classPtr;
         Context *   context;
@@ -1088,6 +1146,44 @@ namespace das {
     struct AstCaptureMacroAnnotation : ManagedStructureAnnotation<CaptureMacro,false,true> {
         AstCaptureMacroAnnotation(ModuleLibrary & ml)
             : ManagedStructureAnnotation ("CaptureMacro", ml) {
+            addField<DAS_BIND_MANAGED_FIELD(name)>("name");
+        }
+    };
+
+    struct SimulateMacroAdapter : SimulateMacro, AstSimulateMacro_Adapter {
+        SimulateMacroAdapter ( const string & n, char * pClass, const StructInfo * info, Context * ctx )
+            : SimulateMacro(n), AstSimulateMacro_Adapter(info), classPtr(pClass), context(ctx) {
+        }
+        virtual bool preSimulate ( Program * prog, Context * ctx ) override {
+            if ( auto fnPreSimulate = get_preSimulate(classPtr) ) {
+                bool result;
+                runMacroFunction(context, "preSimulate", [&]() {
+                    result = invoke_preSimulate(context,fnPreSimulate,classPtr,prog,ctx);
+                });
+                return result;
+            } else {
+                return true;
+            }
+        }
+        virtual bool simulate ( Program * prog, Context * ctx ) override {
+            if ( auto fnSimulate = get_simulate(classPtr) ) {
+                bool result;
+                runMacroFunction(context, "simulate", [&]() {
+                    result = invoke_simulate(context,fnSimulate,classPtr,prog,ctx);
+                });
+                return result;
+            } else {
+                return true;
+            }
+        }
+    protected:
+        void *      classPtr;
+        Context *   context;
+    };
+
+    struct AstSimulateMacroAnnotation : ManagedStructureAnnotation<SimulateMacro,false,true> {
+        AstSimulateMacroAnnotation(ModuleLibrary & ml)
+            : ManagedStructureAnnotation ("SimulateMacro", ml) {
             addField<DAS_BIND_MANAGED_FIELD(name)>("name");
         }
     };
@@ -1498,6 +1594,15 @@ namespace das {
         module->captureMacros.push_back(newM);
     }
 
+    SimulateMacroPtr makeSimulateMacro ( const char * name, const void * pClass, const StructInfo * info, Context * context ) {
+        return make_smart<SimulateMacroAdapter>(name,(char *)pClass,info,context);
+    }
+
+    void addModuleSimulateMacro ( Module * module, SimulateMacroPtr & _newM, Context * ) {
+        SimulateMacroPtr newM = move(_newM);
+        module->simulateMacros.push_back(newM);
+    }
+
     void addModuleInferMacro ( Module * module, PassMacroPtr & _newM, Context * ) {
         PassMacroPtr newM = move(_newM);
         module->macros.push_back(newM);
@@ -1645,6 +1750,21 @@ namespace das {
         blk->annotations.push_back(ann);
     }
 
+    void addAndApplyStructAnnotation ( smart_ptr_raw<Structure> st, smart_ptr_raw<AnnotationDeclaration> & ann, Context * context ) {
+        string err;
+        if (!ann->annotation->rtti_isStructureAnnotation()) {
+            context->throw_error_ex("annotation %s failed to apply to struct %s, not a StructureAnnotation",
+                ann->annotation->name.c_str(), st->name.c_str());
+        }
+        auto stAnn = (StructureAnnotation*)ann->annotation.get();
+        auto program = daScriptEnvironment::bound->g_Program;
+        if ( !stAnn->touch(st, *program->thisModuleGroup, ann->arguments, err) ) {
+            context->throw_error_ex("annotation %s failed to apply to struct %s",
+                ann->annotation->name.c_str(), st->name.c_str());
+        }
+        st->annotations.push_back(ann);
+    }
+
     void astVisit ( smart_ptr_raw<Program> program, smart_ptr_raw<VisitorAdapter> adapter, Context * context, LineInfoArg * line_info ) {
         if (!adapter)
             context->throw_error_at(*line_info, "adapter is required");
@@ -1682,6 +1802,14 @@ namespace das {
         return res;
     }
 
+    void astVisitBlockFinally ( smart_ptr_raw<ExprBlock> expr, smart_ptr_raw<VisitorAdapter> adapter, Context * context, LineInfoArg * line_info ) {
+        if (!adapter)
+            context->throw_error_at(*line_info, "adapter is required");
+        if (!expr)
+            context->throw_error_at(*line_info, "expr is required");
+        expr->visitFinally(*adapter);
+    }
+
     void Module_Ast::registerAdapterAnnotations(ModuleLibrary & lib) {
         // visitor
         addAnnotation(make_smart<AstVisitorAdapterAnnotation>(lib));
@@ -1699,6 +1827,9 @@ namespace das {
                 ->args({"function","adapter","context","line"});
         addExtern<DAS_BIND_FUN(astVisitExpression)>(*this, lib,  "visit",
             SideEffects::accessExternal, "astVisitExpression")
+                ->args({"expression","adapter","context","line"});
+        addExtern<DAS_BIND_FUN(astVisitBlockFinally)>(*this, lib,  "visit_finally",
+            SideEffects::accessExternal, "astVisitBlockFinally")
                 ->args({"expression","adapter","context","line"});
         // function annotation
         addAnnotation(make_smart<AstFunctionAnnotationAnnotation>(lib));
@@ -1734,6 +1865,9 @@ namespace das {
                 ->args({"module","annotation","context"});
         addExtern<DAS_BIND_FUN(addStructureStructureAnnotation)>(*this, lib,  "add_structure_annotation",
             SideEffects::modifyExternal, "addStructureStructureAnnotation")
+                ->args({"structure","annotation","context"});
+        addExtern<DAS_BIND_FUN(addAndApplyStructAnnotation)>(*this, lib,  "add_structure_annotation",
+            SideEffects::modifyExternal, "addAndApplyStructAnnotation")
                 ->args({"structure","annotation","context"});
         // enumeration annotation
         addAnnotation(make_smart<AstEnumerationAnnotationAnnotation>(lib));
@@ -1822,6 +1956,14 @@ namespace das {
                 ->args({"name","class","info","context"});
         addExtern<DAS_BIND_FUN(addModuleCaptureMacro)>(*this, lib,  "add_capture_macro",
             SideEffects::modifyExternal, "addModuleCaptureMacro")
+                ->args({"module","annotation","context"});
+        // simulate macro macro
+        addAnnotation(make_smart<AstSimulateMacroAnnotation>(lib));
+        addExtern<DAS_BIND_FUN(makeSimulateMacro)>(*this, lib,  "make_simulate_macro",
+            SideEffects::modifyExternal, "makeSimulateMacro")
+                ->args({"name","class","info","context"});
+        addExtern<DAS_BIND_FUN(addModuleSimulateMacro)>(*this, lib,  "add_simulate_macro",
+            SideEffects::modifyExternal, "addModuleSimulateMacro")
                 ->args({"module","annotation","context"});
     }
 }

@@ -2,7 +2,9 @@ cmake_minimum_required (VERSION 3.16)
 project (DAS)
 
 option(DAS_FLEX_BISON_DISABLED "Disable FLEX/BISON stage" OFF)
-option(DAS_CLANG_BIND_DISABLED "Disable dasClangBind (libclang bindings, C/C++ parsing)" OFF)
+option(DAS_CLANG_BIND_DISABLED "Disable dasClangBind (libclang bindings, C/C++ parsing)" ON)
+option(DAS_LLVM_DISABLED "Disable dasLLVM (llvm bindings)" ON)
+option(DAS_QUIRREL_DISABLED "Disable dasQuirrel (quirrel bindings)" ON)
 option(DAS_HV_DISABLED "Disable dasHV (websokets,http server and client)" ON)
 option(DAS_GLFW_DISABLED "Disable dasGLFW (GLFW window for graphics apps)" OFF)
 option(DAS_IMGUI_DISABLED "Disable dasIMGUI (IMGUI, IMNODES, IMGUI-NODE-EDITOR gui libraries)" ON)
@@ -659,6 +661,11 @@ ADD_PROJECT_XXD_DEPENDS(libDaScriptTest)
 # Test
 if (NOT ${DAS_BUILD_TEST} MATCHES NO)
   include(examples/test/CMakeLists.txt)
+endif()
+
+# Test
+if (NOT ${DAS_BUILD_TEST} MATCHES NO)
+  include(examples/pathTracer/CMakeLists.txt)
 endif()
 
 # Profile module

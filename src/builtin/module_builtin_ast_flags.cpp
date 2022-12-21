@@ -26,7 +26,7 @@ namespace das {
     TypeDeclPtr makeExprFlagsFlags() {
         auto ft = make_smart<TypeDecl>(Type::tBitfield);
         ft->alias = "ExprFlags";
-        ft->argNames = { "constexpression", "noSideEffects", "noNativeSideEffects" };
+        ft->argNames = { "constexpression", "noSideEffects", "noNativeSideEffects", "isForLoopSource", "isCallArgument" };
         return ft;
     }
 
@@ -42,7 +42,7 @@ namespace das {
         ft->alias = "ExprBlockFlags";
         ft->argNames = { "isClosure", "hasReturn", "copyOnReturn", "moveOnReturn",
             "inTheLoop", "finallyBeforeBody", "finallyDisabled","aotSkipMakeBlock",
-            "aotDoNotSkipAnnotationData", "isCollapseable", "needCollapse" };
+            "aotDoNotSkipAnnotationData", "isCollapseable", "needCollapse", "hasMakeBlock" };
         return ft;
     }
 
@@ -120,15 +120,15 @@ namespace das {
     TypeDeclPtr makeExprYieldFlags() {
         auto ft = make_smart<TypeDecl>(Type::tBitfield);
         ft->alias = "ExprYieldFlags";
-        ft->argNames = { "moveSemantics" };
+        ft->argNames = { "moveSemantics", "skipLockCheck" };
         return ft;
     }
 
     TypeDeclPtr makeExprReturnFlags() {
         auto ft = make_smart<TypeDecl>(Type::tBitfield);
         ft->alias = "ExprReturnFlags";
-        ft->argNames = { "moveSemantics", "returnReference", "returnInBlock",
-            "takeOverRightStack", "returnCallCMRES", "returnCMRES", "fromYield" };
+        ft->argNames = { "moveSemantics", "returnReference", "returnInBlock", "takeOverRightStack",
+        "returnCallCMRES", "returnCMRES", "fromYield", "fromComprehension", "skipLockCheck" };
         return ft;
     }
 
@@ -162,7 +162,7 @@ namespace das {
         ft->alias = "StructureFlags";
         ft->argNames = { "isClass", "genCtor", "cppLayout", "cppLayoutNotPod",
             "generated", "persistent", "isLambda", "privateStructure",
-            "macroInterface", "sealed" };
+            "macroInterface", "sealed", "skipLockCheck" };
         return ft;
     }
 
@@ -182,7 +182,8 @@ namespace das {
         auto ft = make_smart<TypeDecl>(Type::tBitfield);
         ft->alias = "MoreFunctionFlags";
         ft->argNames = {
-            "macroFunction", "needStringCast", "aotHashDeppendsOnArguments"
+            "macroFunction", "needStringCast", "aotHashDeppendsOnArguments", "lateInit", "requestJit",
+            "unsafeOutsideOfFor", "skipLockCheck"
         };
         return ft;
     }
@@ -201,7 +202,7 @@ namespace das {
         ft->alias = "VariableFlags";
         ft->argNames = { "init_via_move", "init_via_clone", "used", "aliasCMRES",
             "marked_used", "global_shared", "do_not_delete", "generated",
-            "capture_as_ref", "can_shadow", "private_variable" };
+            "capture_as_ref", "can_shadow", "private_variable", "tag" };
         return ft;
     }
 

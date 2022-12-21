@@ -108,6 +108,14 @@ namespace das
         return result;
     }
 
+    vec4f SimNode_JitBlock::eval ( Context & context ) {
+        char * THAT = (char *) this;
+        THAT -= offsetof(JitBlock, node);
+        auto block = (Block *) THAT;
+        auto ba = (BlockArguments *) ( context.stack.bottom() + block->argumentsOffset );
+        return func(&context, ba->arguments, ba->copyOrMoveResult, block );
+    }
+
     vec4f SimNode_NOP::eval ( Context & ) {
         return v_zero();
     }
@@ -187,6 +195,7 @@ namespace das
         block->argumentsOffset = argStackTop ? (context.stack.spi() + argStackTop) : 0;
         block->body = subexpr;
         block->aotFunction = nullptr;
+        block->jitFunction = nullptr;
         block->functionArguments = context.abiArguments();
         block->info = info;
         return cast<Block *>::from(block);
@@ -905,6 +914,12 @@ namespace das
     static DAS_THREAD_LOCAL bool g_isInDebugAgentCreation = false;
 
     template <typename TT>
+    void on_debug_agent_mutex ( const TT & lmbd ) {
+        std::lock_guard<std::recursive_mutex> guard(g_DebugAgentMutex);
+        lmbd ();
+    }
+
+    template <typename TT>
     void for_each_debug_agent ( const TT & lmbd ) {
         std::lock_guard<std::recursive_mutex> guard(g_DebugAgentMutex);
         for ( auto & it : g_DebugAgents ) {
@@ -938,9 +953,6 @@ namespace das
         debugInfo = make_shared<DebugInfoAllocator>();
         ownStack = (stackSize != 0);
         persistent = ph;
-        for_each_debug_agent([&]( const DebugAgentPtr & pAgent ){
-            pAgent->onCreateContext(this);
-        });
     }
 
     void Context::strip() {
@@ -1132,14 +1144,16 @@ namespace das
         // functoins
         functions = ctx.functions;
         totalFunctions = ctx.totalFunctions;
+        initFunctions = ctx.initFunctions;
+        totalInitFunctions = ctx.totalInitFunctions;
         // mangled name table
         tabMnLookup = ctx.tabMnLookup;
         tabGMnLookup = ctx.tabGMnLookup;
         tabAdLookup = ctx.tabAdLookup;
+        // lockcheck
+        skipLockChecks = ctx.skipLockChecks;
         // register
-        for_each_debug_agent([&](const DebugAgentPtr & pAgent){
-            pAgent->onCreateContext(this);
-        });
+        announceCreation();
         // now, make it good to go
         restart();
         if ( stack.size() > globalInitStackSize ) {
@@ -1154,11 +1168,13 @@ namespace das
     }
 
     Context::~Context() {
-        // unregister
-        category.value |= uint32_t(ContextCategory::dead);
-        // register
-        for_each_debug_agent([&](const DebugAgentPtr & pAgent){
-            pAgent->onDestroyContext(this);
+        on_debug_agent_mutex([&](){
+            // unregister
+            category.value |= uint32_t(ContextCategory::dead);
+            // register
+            for_each_debug_agent([&](const DebugAgentPtr & pAgent){
+                pAgent->onDestroyContext(this);
+            });
         });
         // shutdown
         runShutdownScript();
@@ -1247,6 +1263,12 @@ namespace das
         code = rel.newCode;
     }
 
+    void Context::announceCreation() {
+        for_each_debug_agent([&](const DebugAgentPtr & pAgent){
+            pAgent->onCreateContext(this);
+        });
+    }
+
     char * Context::intern(const char * str) {
         if ( !str ) return nullptr;
         uint32_t len = uint32_t(strlen(str));
@@ -1309,12 +1331,9 @@ namespace das
         abiArg = nullptr;
         stack.pop(EP,SP);
         if ( !aotInitScript ) {
-            for ( int j=0; j!=totalFunctions && !stopFlags; ++j ) {
-                auto & pf = functions[j];
-                if ( pf.debugInfo->flags & FuncInfo::flag_init ) {
-                    callOrFastcall(&pf, nullptr, 0);
-                }
-
+            for ( int j=0; j!=totalInitFunctions && !stopFlags; ++j ) {
+                auto & pf = initFunctions[j];
+                callOrFastcall(pf, nullptr, 0);
             }
         }
         // now, share the data
@@ -1505,9 +1524,15 @@ namespace das
         });
     }
 
-    void collectDebugAgentState ( Context & ctx ) {
+    void collectDebugAgentState ( Context & ctx, const LineInfo & at ) {
         for_each_debug_agent([&](const DebugAgentPtr & pAgent){
-            pAgent->onCollect( &ctx );
+            pAgent->onCollect( &ctx, at );
+        });
+    }
+
+    void onBreakpointsReset ( const char * file, int breakpointsNum ) {
+        for_each_debug_agent([&](const DebugAgentPtr & pAgent){
+            pAgent->onBreakpointsReset( file, breakpointsNum );
         });
     }
 
@@ -1561,33 +1586,28 @@ namespace das
         }
     }
 
-    bool multiline_log = true;
+    const char * getLogMarker(int level)
+    {
+        if ( level >= LogLevel::error )
+            return "[E] ";
+        else if ( level >= LogLevel::warning )
+            return "[W] ";
+        else if ( level >= LogLevel::info )
+            return "[I] ";
+        else
+            return "";
+    }
 
-    void toLog ( int level, const char * text ) {
+    void logger ( int level, const char *prefix, const char * text ) {
         bool any = false;
         for_each_debug_agent([&](const DebugAgentPtr & pAgent){
             any |= pAgent->onLog(int(level), text);
         });
         if ( !any ) {
-            const char * marker = "";
-
-            if ( level >= LogLevel::error )
-                marker = "[E] ";
-            else if ( level >= LogLevel::warning )
-                marker = "[W] ";
-            else if ( level >= LogLevel::info )
-                marker = "[I] ";
-            else if ( level >= LogLevel::debug )
-                marker = "";
-            else if ( level >= LogLevel::trace )
-                marker = "";
-
             if ( level>=LogLevel::warning ) {
-                fprintf(stderr, multiline_log ? "%s%s\n" : "%s%s", marker, text);
-                fflush(stderr);
+                das_to_stderr("%s%s", prefix, text);
             } else {
-                fprintf(stdout, multiline_log ? "%s%s\n" : "%s%s", marker, text);
-                fflush(stdout);
+                das_to_stdout("%s%s", prefix, text);
             }
         }
     }
@@ -1690,15 +1710,13 @@ namespace das
 
     void Context::to_out ( const char * message ) {
         if (message) {
-            fprintf(stdout, "%s", message);
-            fflush(stdout);
+            das_to_stdout("%s", message);
         }
     }
 
     void Context::to_err ( const char * message ) {
         if (message) {
-            fprintf(stderr, "%s", message);
-            fflush(stderr);
+            das_to_stderr("%s", message);
         }
     }
 
@@ -1737,6 +1755,11 @@ namespace das
         if ( throwBuf ) {
             if ( alwaysStackWalkOnException ) stackWalk(nullptr, false, false);
             if ( breakOnException ) breakPoint(at, "exception", message);
+#if defined(WIN64) || defined(_WIN64)
+            //  "An invalid or unaligned stack was encountered during an unwind operation." exception is issued via longjmp
+            //  this is a known issue with longjmp on x64, and this workaround disables stack unwinding
+            ((_JUMP_BUFFER *)throwBuf)->Frame = 0;
+#endif
             longjmp(*throwBuf,1);
         } else {
             to_err("\nunhandled exception\n");
@@ -1759,6 +1782,12 @@ namespace das
         throw dasException(exception ? exception : "", exceptionAt);
 #else
         if ( throwBuf ) {
+#if defined(WIN64) || defined(_WIN64)
+            //  "An invalid or unaligned stack was encountered during an unwind operation." exception is issued via longjmp
+            //  this is a known issue with longjmp on x64, and this workaround disables stack unwinding
+            ((_JUMP_BUFFER *)throwBuf)->Frame = 0;
+#endif
+
             longjmp(*throwBuf,1);
         } else {
             to_err("\nunhandled exception\n");
@@ -2055,6 +2084,8 @@ namespace das
             if ( fn.code ) fn.code->visit(*vis);
         }
     }
+
+    const LineInfo * SimFunction::getLineInfo() const { return &code->debugInfo; }
 }
 
 //workaround compiler bug in MSVC 32 bit

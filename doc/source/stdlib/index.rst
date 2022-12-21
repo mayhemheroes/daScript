@@ -72,7 +72,11 @@ THE SOFTWARE.
    cpp_bind.rst
    decs.rst
    decs_boost.rst
-
+   coroutines.rst
+   interfaces.rst
+   export_constructor.rst
+   faker.rst
+   fuzzer.rst
 
 
 

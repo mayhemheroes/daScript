@@ -389,7 +389,7 @@ namespace das {
                         mark ( fld.type.get() );
                     }
                 }
-            } else if ( decl->baseType==Type::tEnumeration ) {
+            } else if ( decl->baseType==Type::tEnumeration || decl->baseType==Type::tEnumeration8 || decl->baseType==Type::tEnumeration16 ) {
                 DAS_ASSERT(decl->enumType);
                 useEnums.insert(decl->enumType);
             } else {
@@ -542,7 +542,7 @@ namespace das {
             ss << " };\n";
         }
         void describeCppStructInfo ( TextWriter & ss, StructInfo * info ) const {
-            ss << "(char*)\"" << info->name << "\", " << "(char*)\"" << info->module_name << "\", " << info->flags << ", ";
+            ss << "\"" << info->name << "\", " << "\"" << info->module_name << "\", " << info->flags << ", ";
             if ( info->fields ) {
                 ss << structInfoName(info) << "_fields, ";
             } else {
@@ -550,9 +550,9 @@ namespace das {
             }
             ss << info->count << ", ";
             ss << info->size << ", ";
-            ss << "0x" << HEX << info->init_mnh << DEC << "ul, ";
+            ss << "UINT64_C(0x" << HEX << info->init_mnh << DEC << "), ";
             ss << "nullptr, ";  // annotation list
-            ss << "0x" << HEX << info->hash << DEC << "ul";
+            ss << "UINT64_C(0x" << HEX << info->hash << DEC << ")";
         }
         void describeCppFuncInfoFields ( TextWriter & ss, FuncInfo * info ) const {
             if ( !info->fields ) return;
@@ -585,13 +585,13 @@ namespace das {
                 << "&" << typeInfoName(info->result) << ", "
                 << "nullptr,"
                 << "0,"
-                << "0x" << HEX << info->hash << DEC << "ul, "
+                << "UINT64_C(0x" << HEX << info->hash << DEC << "), "
                 << "0x" << HEX << info->flags << DEC;
         }
         void describeCppEnumInfoValues ( TextWriter & ss, EnumInfo * einfo ) const {
             for ( uint32_t v=0; v!=einfo->count; ++v ) {
                 auto val = einfo->fields[v];
-                ss << "EnumValueInfo " << enumInfoName(einfo) << "_value_" << v << " = { (char*)\""
+                ss << "EnumValueInfo " << enumInfoName(einfo) << "_value_" << v << " = { \""
                 << val->name << "\", " << val->value << " };\n";
             }
             ss << "EnumValueInfo * " << enumInfoName(einfo) << "_values [] = { ";
@@ -602,8 +602,8 @@ namespace das {
             ss << " };\n";
         }
         void describeCppEnumInfo ( TextWriter & ss, EnumInfo * info ) const {
-            ss  << "(char*)\"" << info->name << "\", " << "(char*)\"" << info->module_name << "\", " << enumInfoName(info) << "_values, "
-                << info->count << ", 0x" << HEX << info->hash << DEC << "ul";
+            ss  << "\"" << info->name << "\", \"" << info->module_name << "\", " << enumInfoName(info) << "_values, "
+                << info->count << ", UINT64_C(0x" << HEX << info->hash << DEC << ")";
         }
         void describeCppTypeInfo ( TextWriter & ss, TypeInfo * info, const string & suffix = "" ) const {
             ss << "Type::" << das_to_cppCTypeString(info->type) << ", ";
@@ -652,7 +652,7 @@ namespace das {
                 ss << ", nullptr";
             }
             if (info->argCount && info->argNames) {
-                ss << ", (char **)" << typeInfoName(info) << "_arg_names" << suffix;
+                ss << ", " << typeInfoName(info) << "_arg_names" << suffix;
             } else {
                 ss << ", nullptr";
             }
@@ -667,7 +667,7 @@ namespace das {
             }
             ss << ", " << info->flags;
             ss << ", " << info->size;
-            ss << ", 0x" << HEX << info->hash << DEC << "ul";
+            ss << ", UINT64_C(0x" << HEX << info->hash << DEC << ")";
         }
 
     };
@@ -906,6 +906,7 @@ namespace das {
             helper.rtti = program->options.getBoolOption("rtti",false);
             prologue = program->options.getBoolOption("aot_prologue",false) ||
                 program->getDebugger();
+            solidContext = program->policies.solid_context || program->options.getBoolOption("solid_context",false);
         }
         string str() const {
             return "\n" + helper.str() + sti.str()  + stg.str() + ss.str();
@@ -922,6 +923,7 @@ namespace das {
         das_set<string>       aotPrefix;
         vector<ExprBlock *>         scopes;
         bool                        prologue = false;
+        bool                        solidContext = false;
     protected:
         void newLine () {
             auto nlPos = ss.tellp();
@@ -985,11 +987,21 @@ namespace das {
                 ss << "\n#if 0 // skipping structure " << that->name << " declaration due to CPP layout";
             }
             ss << "namespace " << aotModuleName(that->module) << " {\n";
+            for ( auto & ann : that->annotations ) {
+                if ( ann->annotation->rtti_isStructureAnnotation() ) {
+                    static_pointer_cast<StructureAnnotation>(ann->annotation)->aotPrefix(that, ann->arguments, ss);
+                }
+            }
             ss << "\nstruct " << that->name;
             if (that->cppLayout && that->parent) {
                 ss << " : " << that->parent->name;
             }
             ss << " {\n";
+            for ( auto & ann : that->annotations ) {
+                if ( ann->annotation->rtti_isStructureAnnotation() ) {
+                    static_pointer_cast<StructureAnnotation>(ann->annotation)->aotBody(that, ann->arguments, ss);
+                }
+            }
         }
         virtual void preVisitStructureField ( Structure * that, Structure::FieldDeclaration & decl, bool last ) override {
             Visitor::preVisitStructureField(that, decl, last);
@@ -1014,6 +1026,11 @@ namespace das {
                 for ( auto & tf : that->fields ) {
                     ss << "static_assert(offsetof(" << that->name << "," << tf.name << ")=="
                         << tf.offset << ",\"structure field offset mismatch with DAS\");\n";
+                }
+            }
+            for ( auto & ann : that->annotations ) {
+                if ( ann->annotation->rtti_isStructureAnnotation() ) {
+                    static_pointer_cast<StructureAnnotation>(ann->annotation)->aotSuffix(that, ann->arguments, ss);
                 }
             }
             ss << "}\n";    // namespace
@@ -1077,8 +1094,15 @@ namespace das {
             } else {
                 ss << (var->init ? "das_global" : "das_global_zero");
             }
+            if ( solidContext ) ss << "_solid";
             ss << "<" << describeCppType(var->type,CpptSubstitureRef::no,CpptSkipRef::yes,CpptSkipConst::yes)
-                << ",0x" << HEX << var->getMangledNameHash() << DEC << ">(__context__)";
+                << ",";
+            if ( solidContext ) {
+                ss << var->stackTop;
+            } else {
+                ss << "0x" << HEX << var->getMangledNameHash() << DEC;
+            }
+            ss << ">(__context__)";
         }
         virtual VariablePtr visitGlobalLet ( const VariablePtr & var ) override {
             ss << ";";
@@ -1154,7 +1178,7 @@ namespace das {
                 DAS_ASSERT(0 && "we should not be here. we need stacktop for the name");
                 stackTop = (expr->at.line<<16) + expr->at.column;
             }
-            return "_temp_make_local_" + to_string(expr->at.line) + "_" + to_string(stackTop);
+            return "_temp_make_local_" + to_string(expr->at.line) + "_" + to_string(expr->at.column) + "_" + to_string(stackTop);
         }
         virtual void preVisit ( ExprBlock * block ) override {
             Visitor::preVisit(block);
@@ -2774,7 +2798,11 @@ namespace das {
                 }
                 ss << " " << collector.getVarName(arg);
             }
-            ss << ")->" << describeCppType(block->returnType);
+            ss << ") ";
+            if ( block->aotSkipMakeBlock ) {
+                ss << "DAS_AOT_INLINE_LAMBDA ";
+            }
+            ss << "-> " << describeCppType(block->returnType);
         }
         virtual ExpressionPtr visit ( ExprMakeBlock * expr ) override {
             auto block = static_pointer_cast<ExprBlock>(expr->block);
@@ -2819,6 +2847,7 @@ namespace das {
                 if (bt == Type::tBlock) ss << "das_invoke";
                 else if (bt == Type::tLambda) ss << "das_invoke_lambda";
                 else if (bt == Type::tFunction) ss << "das_invoke_function";
+                else if (bt == Type::tString) ss << "das_invoke_function_by_name";
                 else ss << "das_invoke /*unknown*/";
                 ExprInvoke * einv = static_cast<ExprInvoke *>(call);
                 ss << "<" << describeCppType(call->type) << ">::invoke";

@@ -34,10 +34,20 @@ namespace das {
     __forceinline float invlengthSq3(vec4f a){return v_extract_x(v_rcp_x(v_length3_sq_x(a)));}
     __forceinline float invlengthSq4(vec4f a){return v_extract_x(v_rcp_x(v_length4_sq_x(a)));}
 
+    __forceinline float distance2     (vec4f a, vec4f b){return length2(v_sub(a,b));}
+    __forceinline float invdistance2  (vec4f a, vec4f b){return invlength2(v_sub(a,b));}
+    __forceinline float distanceSq2   (vec4f a, vec4f b){return lengthSq2(v_sub(a,b));}
+    __forceinline float invdistanceSq2(vec4f a, vec4f b){return invlengthSq2(v_sub(a,b));}
+
     __forceinline float distance3     (vec4f a, vec4f b){return v_extract_x(v_length3_x(v_sub(a, b)));}
     __forceinline float invdistance3  (vec4f a, vec4f b){return v_extract_x(v_rcp_x(v_length3_x(v_sub(a, b))));}
     __forceinline float distanceSq3   (vec4f a, vec4f b){return v_extract_x(v_length3_sq_x(v_sub(a, b)));}
     __forceinline float invdistanceSq3(vec4f a, vec4f b){return v_extract_x(v_rcp_x(v_length3_sq_x(v_sub(a,b))));}
+
+    __forceinline float distance4     (vec4f a, vec4f b){return v_extract_x(v_length4_x(v_sub(a, b)));}
+    __forceinline float invdistance4  (vec4f a, vec4f b){return v_extract_x(v_rcp_x(v_length4_x(v_sub(a, b))));}
+    __forceinline float distanceSq4   (vec4f a, vec4f b){return v_extract_x(v_length4_sq_x(v_sub(a, b)));}
+    __forceinline float invdistanceSq4(vec4f a, vec4f b){return v_extract_x(v_rcp_x(v_length4_sq_x(v_sub(a,b))));}
 
     __forceinline float dot2(vec4f a, vec4f b){vec4f v = v_mul(a, b); return v_extract_x(v_add_x(v, v_rot_1(v)));}
     __forceinline float dot3(vec4f a, vec4f b){return v_extract_x(v_dot3_x(a, b));}
@@ -52,11 +62,37 @@ namespace das {
 
     __forceinline vec4f cross3(vec4f a, vec4f b){vec4f v = v_cross3(a,b); return v;}
 
-    // use reliable versions of isnan() and isfinite() that will not be cut out by the optimizer due to -ffast-math flag
-    __forceinline bool   fisnan(float  a) { volatile float b = a; return b != a; }
-    __forceinline bool   disnan(double a) { volatile double b = a; return b != a; }
-    __forceinline bool   fisfinite(float  a) { return fabsf(a) <= FLT_MAX; }
-    __forceinline bool   disfinite(double a) { return fabs(a) <= DBL_MAX; }
+#if defined(__GNUC__) || defined(__clang__)
+#if !defined(__clang__)
+#define DAS_FINITE_MATH __attribute__((optimize("no-finite-math-only")))
+#else
+#define DAS_FINITE_MATH
+#endif
+#if defined(__clang__) && !defined(__arm64__)
+#pragma float_control(push)
+#pragma float_control(precise, on)
+#endif
+#if __clang_major__ < 12 && defined(__clang__) && defined(__FAST_MATH__)
+    //unfortunately older clang versions do not work with float_control
+    __forceinline DAS_FINITE_MATH bool   fisnan(float  a) { volatile float b = a; return b != a; }
+    __forceinline DAS_FINITE_MATH bool   disnan(double  a) { volatile double b = a; return b != a; }
+#else
+    __forceinline DAS_FINITE_MATH bool   fisnan(float  a) { return __builtin_isnan(a); }
+    __forceinline DAS_FINITE_MATH bool   disnan(double  a) { return __builtin_isnan(a); }
+#endif
+    __forceinline DAS_FINITE_MATH bool   fisfinite(float  a) { return !__builtin_isinf(a); }
+    __forceinline DAS_FINITE_MATH bool   disfinite(double  a) { return !__builtin_isinf(a); }
+#undef DAS_FINITE_MATH
+#if defined(__clang__) && !defined(__arm64__)
+#pragma float_control(pop)
+#endif
+#else
+    //msvc just does not optimize fast math
+    __forceinline bool   fisfinite(float  a) { return !isinf(a); }
+    __forceinline bool   fisnan(float  a) { return isnan(a); }
+    __forceinline bool   disfinite(double  a) { return !isinf(a); }
+    __forceinline bool   disnan(double  a) { return isnan(a); }
+#endif
 
 
     __forceinline double dsign (double a){return (a == 0) ? 0 : (a > 0) ? 1 : -1;}
@@ -102,7 +138,7 @@ namespace das {
     //     outRefracted = nint*(v-n*dt)-n*sqrt(discr)
     //     return true
     // return false
-    __forceinline float3 refract(vec4f v, vec4f n, float nint) {
+    __forceinline vec4f refract(vec4f v, vec4f n, float nint) {
         vec4f dtv = v_dot3(v, n);
         float dt = v_extract_x(dtv);
         float discr = 1.0f - nint*nint*(1.0f - dt*dt);
@@ -111,7 +147,7 @@ namespace das {
             vec4f sqrt_discr = v_perm_xxxx(v_sqrt_x(v_set_x(discr)));
             return v_sub(v_mul(nintv, v_sub(v, v_mul(n, dtv))), v_mul(n, sqrt_discr));
         } else {
-            return float3(0.);
+            return v_zero();
         }
     }
 

@@ -129,6 +129,13 @@ namespace das {
         V_END();
     }
 
+    SimNode* SimNode_InvokeFnByNameAny::visit(SimVisitor& vis) {
+        V_BEGIN();
+        V_OP(InvokeFnByName);
+        V_CALL();
+        V_END();
+    }
+
     SimNode* SimNode_InvokeLambdaAny::visit(SimVisitor& vis) {
         V_BEGIN();
         V_OP(InvokeLambda);
@@ -163,6 +170,15 @@ namespace das {
         uint64_t fptr = (uint64_t) func;
         V_BEGIN();
         V_OP(Jit);
+        V_ARG(fptr);
+        V_END();
+    }
+
+
+    SimNode * SimNode_JitBlock::visit ( SimVisitor & vis ) {
+        uint64_t fptr = (uint64_t) func;
+        V_BEGIN();
+        V_OP(JitBlock);
         V_ARG(fptr);
         V_END();
     }

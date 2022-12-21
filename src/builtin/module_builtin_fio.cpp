@@ -75,6 +75,8 @@ namespace das {
             SideEffects::accessExternal, "get_time_usec");
         addExtern<DAS_BIND_FUN(cast_int64)>(*this, lib, "int64",
             SideEffects::none, "cast_int64");
+        addExtern<DAS_BIND_FUN(get_time_nsec)>(*this, lib, "get_time_nsec",
+            SideEffects::accessExternal, "get_time_nsec");
     }
 }
 
@@ -171,6 +173,11 @@ namespace das {
         fclose((FILE *)f);
     }
 
+    void builtin_fflush ( const FILE * f, Context * context, LineInfoArg * at ) {
+        if ( !f ) context->throw_error_at(*at, "can't fflush NULL");
+        fflush((FILE *)f);
+    }
+
     const FILE * builtin_stdin() {
         return stdin;
     }
@@ -198,6 +205,7 @@ namespace das {
         arr.data = (char *) data;
         arr.capacity = arr.size = uint32_t(st.st_size);
         arr.lock = 1;
+        arr.flags = 0;
         vec4f args[1];
         args[0] = cast<Array *>::from(&arr);
         context->invoke(blk, args, nullptr, at);
@@ -297,6 +305,7 @@ namespace das {
             arr.size = rlen;
             arr.capacity = rlen;
             arr.lock = 1;
+            arr.flags = 0;
             bargs[0] = cast<das::Array*>::from(&arr);
             context.invoke(*block, bargs, nullptr, &node->debugInfo);
         }
@@ -372,7 +381,7 @@ namespace das {
 #if defined(_MSC_VER)
         _finddata_t c_file;
         intptr_t hFile;
-        string findPath = string(path) + "/*";
+        string findPath = string(path ? path : "") + "/*";
         if ((hFile = _findfirst(findPath.c_str(), &c_file)) != -1L) {
             do {
                 char * fname = context->stringHeap->allocateString(c_file.name, uint32_t(strlen(c_file.name)));
@@ -386,7 +395,7 @@ namespace das {
  #else
         DIR *dir;
         struct dirent *ent;
-        if ((dir = opendir (path)) != NULL) {
+        if ((dir = opendir (path ? path : "")) != NULL) {
             while ((ent = readdir (dir)) != NULL) {
                 char * fname = context->stringHeap->allocateString(ent->d_name,uint32_t(strlen(ent->d_name)));
                 vec4f args[1] = {
@@ -418,12 +427,16 @@ namespace das {
     }
 
     int builtin_popen ( const char * cmd, const TBlock<void,const FILE *> & blk, Context * context, LineInfoArg * at ) {
+        if ( !cmd ) {
+            context->throw_error_at(*at, "popen of null");
+            return -1;
+        }
 #ifdef _MSC_VER
-        FILE * f = cmd ? _popen(cmd, "rt") : nullptr;
+        FILE * f = _popen(cmd, "rt");
 #elif defined(__linux__)
-        FILE * f = cmd ? popen(cmd, "r") : nullptr;
+        FILE * f = popen(cmd, "r");
 #else
-        FILE * f = cmd ? popen(cmd, "r+") : nullptr;
+        FILE * f = popen(cmd, "r+");
 #endif
         vec4f args[1];
         args[0] = cast<FILE *>::from(f);
@@ -437,9 +450,15 @@ namespace das {
     }
 
     char * get_full_file_name ( const char * path, Context * context, LineInfoArg * ) {
+        if ( !path ) return nullptr;
         auto res = normalizeFileName(path);
         if ( res.length()==0 ) return nullptr;
         return context->stringHeap->allocateString(res);
+    }
+
+    bool builtin_remove_file ( const char * path ) {
+        if ( !path ) return false;
+        return remove(path) == 0;
     }
 
     class Module_FIO : public Module {
@@ -458,11 +477,17 @@ namespace das {
             addConstant<int32_t>(*this, "seek_cur", SEEK_CUR);
             addConstant<int32_t>(*this, "seek_end", SEEK_END);
             // file io
+            addExtern<DAS_BIND_FUN(builtin_remove_file)>(*this, lib, "remove",
+                SideEffects::modifyExternal, "builtin_remove_file")
+                    ->args({"name"});
             addExtern<DAS_BIND_FUN(builtin_fopen)>(*this, lib, "fopen",
                 SideEffects::modifyExternal, "builtin_fopen")
                     ->args({"name","mode"});
             addExtern<DAS_BIND_FUN(builtin_fclose)>(*this, lib, "fclose",
                 SideEffects::modifyExternal, "builtin_fclose")
+                    ->args({"file","context","line"});
+            addExtern<DAS_BIND_FUN(builtin_fflush)>(*this, lib, "fflush",
+                SideEffects::modifyExternal, "builtin_fflush")
                     ->args({"file","context","line"});
             addExtern<DAS_BIND_FUN(builtin_fprint)>(*this, lib, "fprint",
                 SideEffects::modifyExternal, "builtin_fprint")

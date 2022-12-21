@@ -14,23 +14,23 @@
 namespace das {
 #define MATH_FUN_OP1(fun)\
       DEFINE_POLICY(fun);\
-      IMPLEMENT_OP1_FUNCTION_POLICY(fun,Float,float);\
-      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float2);     \
-      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float3);     \
+      IMPLEMENT_OP1_FUNCTION_POLICY(fun,Float,float);  \
+      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float2); \
+      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float3); \
       IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float4);
 
 #define MATH_FUN_OP1_INT(fun)\
       DEFINE_POLICY(fun);\
       IMPLEMENT_OP1_FUNCTION_POLICY_EX(fun,Int,int32_t,Float,float);\
-      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float2);     \
-      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float3);     \
+      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float2); \
+      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float3); \
       IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, float4);
 
 #define MATH_FUN_OP2(fun)\
       DEFINE_POLICY(fun);\
-      IMPLEMENT_OP2_FUNCTION_POLICY(fun,Float,float);\
-      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, float2);     \
-      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, float3);     \
+      IMPLEMENT_OP2_FUNCTION_POLICY(fun,Float,float);  \
+      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, float2); \
+      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, float3); \
       IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, float4);
 
 #define MATH_FUN_OP1I(fun)\
@@ -38,25 +38,34 @@ namespace das {
       IMPLEMENT_OP1_FUNCTION_POLICY(fun,Int,int32_t); \
       IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, int2);  \
       IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, int3);  \
-      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, int4);
+      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, int4);  \
+      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, uint2); \
+      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, uint3); \
+      IMPLEMENT_OP1_EVAL_FUNCTION_POLICY(fun, uint4);
 
 #define MATH_FUN_OP2I(fun)\
-      IMPLEMENT_OP2_FUNCTION_POLICY(fun,Int,int32_t);\
-      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, int2);     \
-      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, int3);     \
-      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, int4);
+      IMPLEMENT_OP2_FUNCTION_POLICY(fun,Int,int32_t); \
+      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, int2);  \
+      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, int3);  \
+      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, int4);  \
+      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, uint2); \
+      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, uint3); \
+      IMPLEMENT_OP2_EVAL_FUNCTION_POLICY(fun, uint4);
 
 #define MATH_FUN_OP3I(fun)\
-      IMPLEMENT_OP3_FUNCTION_POLICY(fun,Int,int32_t);\
-      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, int2);     \
-      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, int3);     \
-      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, int4);
+      IMPLEMENT_OP3_FUNCTION_POLICY(fun,Int,int32_t); \
+      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, int2);  \
+      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, int3);  \
+      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, int4);  \
+      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, uint2); \
+      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, uint3); \
+      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, uint4);
 
 #define MATH_FUN_OP3(fun)\
       DEFINE_POLICY(fun);\
-      IMPLEMENT_OP3_FUNCTION_POLICY(fun,Float,float);\
-      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, float2);     \
-      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, float3);     \
+      IMPLEMENT_OP3_FUNCTION_POLICY(fun,Float,float);  \
+      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, float2); \
+      IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, float3); \
       IMPLEMENT_OP3_EVAL_FUNCTION_POLICY(fun, float4);
 
 #define MATH_FUN_OP1A(fun)                               \
@@ -414,7 +423,7 @@ namespace das {
             V_CALL();
             V_END();
         }
-        virtual vec4f eval(Context & context) override {
+        virtual vec4f DAS_EVAL_ABI eval(Context & context) override {
             auto cmres = cmresEval->evalPtr(context);
             memset ( cmres, 0, sizeof(MatT) );
             return cast<void *>::from(cmres);
@@ -618,6 +627,7 @@ namespace das {
             // constants
             addConstant(*this,"PI",(float)M_PI);
             addConstant(*this,"FLT_EPSILON",FLT_EPSILON);
+            addConstant(*this,"DBL_EPSILON",DBL_EPSILON);
             // trigonometry functions
             addFunctionTrig<float>(*this, lib);
             addFunctionTrig<float2>(*this,lib);
@@ -646,9 +656,9 @@ namespace das {
             addFunctionCommonTyped<int3>(*this, lib);
             addFunctionCommonTyped<int4>(*this, lib);
             addFunctionCommonTyped<uint32_t>(*this, lib);
-            //addFunctionCommonTyped<uint2>(*this, lib);
-            //addFunctionCommonTyped<uint3>(*this, lib);
-            //addFunctionCommonTyped<uint4>(*this, lib);
+            addFunctionCommonTyped<uint2>(*this, lib);
+            addFunctionCommonTyped<uint3>(*this, lib);
+            addFunctionCommonTyped<uint4>(*this, lib);
             addFunctionCommonTyped<float>(*this, lib);
             addFunctionCommonTyped<float2>(*this, lib);
             addFunctionCommonTyped<float3>(*this, lib);
@@ -682,10 +692,18 @@ namespace das {
             addExternEx<float(float2),DAS_BIND_FUN(lengthSq2)>(*this, lib, "length_sq", SideEffects::none, "lengthSq2")->arg("x");
             addExternEx<float(float3),DAS_BIND_FUN(lengthSq3)>(*this, lib, "length_sq", SideEffects::none, "lengthSq3")->arg("x");
             addExternEx<float(float4),DAS_BIND_FUN(lengthSq4)>(*this, lib, "length_sq", SideEffects::none, "lengthSq4")->arg("x");
+            addExternEx<float(float2,float2),DAS_BIND_FUN(distance2)>(*this, lib, "distance", SideEffects::none, "distance2")->args({"x","y"});
+            addExternEx<float(float2,float2),DAS_BIND_FUN(distanceSq2)>(*this, lib, "distance_sq", SideEffects::none, "distanceSq2")->args({"x","y"});
+            addExternEx<float(float2,float2),DAS_BIND_FUN(invdistance2)>(*this, lib, "inv_distance", SideEffects::none, "invdistance2")->args({"x","y"});
+            addExternEx<float(float2,float2),DAS_BIND_FUN(invdistanceSq2)>(*this, lib, "inv_distance_sq", SideEffects::none, "invdistanceSq2")->args({"x","y"});
             addExternEx<float(float3,float3),DAS_BIND_FUN(distance3)>(*this, lib, "distance", SideEffects::none, "distance3")->args({"x","y"});
             addExternEx<float(float3,float3),DAS_BIND_FUN(distanceSq3)>(*this, lib, "distance_sq", SideEffects::none, "distanceSq3")->args({"x","y"});
             addExternEx<float(float3,float3),DAS_BIND_FUN(invdistance3)>(*this, lib, "inv_distance", SideEffects::none, "invdistance3")->args({"x","y"});
             addExternEx<float(float3,float3),DAS_BIND_FUN(invdistanceSq3)>(*this, lib, "inv_distance_sq", SideEffects::none, "invdistanceSq3")->args({"x","y"});
+            addExternEx<float(float4,float4),DAS_BIND_FUN(distance4)>(*this, lib, "distance", SideEffects::none, "distance4")->args({"x","y"});
+            addExternEx<float(float4,float4),DAS_BIND_FUN(distanceSq4)>(*this, lib, "distance_sq", SideEffects::none, "distanceSq4")->args({"x","y"});
+            addExternEx<float(float4,float4),DAS_BIND_FUN(invdistance4)>(*this, lib, "inv_distance", SideEffects::none, "invdistance4")->args({"x","y"});
+            addExternEx<float(float4,float4),DAS_BIND_FUN(invdistanceSq4)>(*this, lib, "inv_distance_sq", SideEffects::none, "invdistanceSq4")->args({"x","y"});
             // unique float functions
             addExtern<DAS_BIND_FUN(fisnan)>(*this, lib, "is_nan", SideEffects::none, "fisnan")->arg("x");
             addExtern<DAS_BIND_FUN(fisfinite)>(*this, lib, "is_finite", SideEffects::none, "fisfinite")->arg("x");

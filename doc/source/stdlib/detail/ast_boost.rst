@@ -15,6 +15,9 @@
 .. |method-ast_boost-TagStructureAnnotation.apply| replace:: Implements [tag_structure] annotation.
     Internally this just verifies if tag has a name, i.e. bool argument without value (set to true).
 
+.. |class-ast_boost-SetupSimulateMacro| replace:: This is base class for a simulate macro.
+    Internally this just verifies if tag has a name, i.e. bool argument without value (set to true).
+
 .. |class-ast_boost-SetupAnyAnnotation| replace:: This is base class for any annotation or macro setup.
 
 .. |method-ast_boost-SetupAnyAnnotation.apply| replace:: Implements macro registration setup.
@@ -127,5 +130,57 @@
 
 .. |function-ast_boost-visit_expression| replace:: Visits expression, returns new expression with correct reference count (or old expression with unmodified reference count).
 
+.. |structure_macro-ast_boost-function_macro| replace:: Turns AstFunctionAnnotation into a macro with the specified `name`.
 
+.. |structure_macro-ast_boost-block_macro| replace:: Turns AstBlockAnnotation into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-structure_macro| replace:: Turns AstStructureAnnotation into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-enumeration_macro| replace:: Turns AstEnumerationAnnotation into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-contract| replace:: Turns AstFunctionAnnotation into a contract macro with the specified `name`.
+
+.. |structure_macro-ast_boost-reader_macro| replace:: Turns AstReaderMacro into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-comment_reader| replace:: Turns AstCommentReader into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-call_macro| replace:: Turns AstCallMacro into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-typeinfo_macro| replace:: Turns AstTypeInfoMacro into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-variant_macro| replace:: Turns AstVariantMacro into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-for_loop_macro| replace:: Turns AstForLoopMacro into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-capture_macro| replace:: Turns AstCaptureMacro into a macro with the specified `name`.
+
+.. |structure_macro-ast_boost-tag_structure| replace:: This macro implements [tag_structure] annotation, which allows to add tag (name) to a specific structure.
+
+.. |structure_macro-ast_boost-tag_function_macro| replace:: This macro implements [tag_function_macro] annotation, which allows to add an AstFunctionAnnotation to any function with a specific [tag_function(name)] tag.
+
+.. |structure_macro-ast_boost-infer_macro| replace:: Turns AstPassMacro into a macro with the specified 'name', which is called during the `infer` pass.
+
+.. |structure_macro-ast_boost-dirty_infer_macro| replace:: Turns AstPassMacro into a macro with the specified 'name', which is called during the `dirty infer` pass.
+
+.. |structure_macro-ast_boost-optimization_macro| replace:: Turns AstPassMacro into a macro with the specified 'name', which is called during the `optimization` pass.
+
+.. |structure_macro-ast_boost-lint_macro| replace:: Turns AstPassMacro into a macro with the specified 'name', which is called during the `lint` pass.
+
+.. |structure_macro-ast_boost-global_lint_macro| replace:: Turns AstPassMacro into a macro with the specified 'name', which is called during the `global lint` pass.
+
+.. |structure_macro-ast_boost-simulate_macro| replace:: Turns AstSimulateMacro into a macro with the specified `name`.
+
+.. |function-ast_boost-isCMRES| replace:: Returns true if function returns result by copy-or-move on the stack, as oppose to through the register ABI.
+
+.. |function-ast_boost-isMakeLocal| replace:: Returns true if Expression is inherited from ExprMakeLocal, i.e. ExprMakeArray, ExprMakeStruct, ExprMakeTuple, or ExprMakeVariant.
+
+.. |function-ast_boost-get_workhorse_types| replace:: Returns array which contains all `workhorse` base types.
+
+.. |function-ast_boost-find_argument_index| replace:: Returns index of the specific argument name, or -1 if its not found.
+
+.. |function-ast_boost-isCMRESType| replace:: Returns true if type is copy-or-move on the stack, as oppose to through the register ABI.
+
+.. |function-ast_boost-function_to_type| replace:: Returns TypeDeclPtr of the tFunction type, based on the provided function.
+
+.. |function-ast_boost-visit_finally| replace:: Calls visitor on the `finally` section of the block.
 

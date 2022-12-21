@@ -160,7 +160,7 @@ namespace das {
         virtual FunctionPtr visit ( Function * that ) override {
             func->totalStackSize = das::max(func->totalStackSize, stackTop);
             // detecting fastcall
-            if ( !program->getDebugger() ) {
+            if ( !program->getDebugger() && !program->getProfiler() ) {
                 if ( !func->exports && !func->addr && func->totalStackSize==sizeof(Prologue) && func->arguments.size()<=32 ) {
                     if (func->body->rtti_isBlock()) {
                         auto block = static_pointer_cast<ExprBlock>(func->body);
@@ -404,6 +404,9 @@ namespace das {
             }
             if ( func ) {
                 func->hasMakeBlock = true;
+                for ( auto blk : blocks ) {
+                    blk->hasMakeBlock = true;
+                }
             }
         }
     // ExprAscend
@@ -594,7 +597,13 @@ namespace das {
                 if ( func->used && !func->builtIn ) {
                     func->index = totalFunctions++;
                     if ( log ) {
-                        logs << "\t" << func->index << "\t" << func->totalStackSize << "\t" << func->getMangledName() << "\n";
+                        logs << "\t" << func->index << "\t" << func->totalStackSize << "\t" << func->getMangledName();
+                        if ( func->init ) {
+                            logs << " [init";
+                            if (func->lateInit ) logs << "(late)";
+                            logs << "]";
+                        }
+                        logs << "\n";
                     }
                 }
                 else {

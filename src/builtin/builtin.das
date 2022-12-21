@@ -314,6 +314,7 @@ def binary_load(var obj; data:array<uint8>)
     concept_assert(typeinfo(is_ref_type obj),"can only serialize ref types")
     _builtin_binary_load(obj,data)
 
+[skip_lock_check]
 def clone_to_move(clone_src:auto(TT) implicit) : TT -const -#
     unsafe
         var clone_dest : TT - #
@@ -359,6 +360,7 @@ def clone(var a:table<string;auto(VT)>;b:table<string;VT> implicit)
         let kk := k
         a[kk] := v
 
+[unsafe_outside_of_for]
 def keys(a:table<auto(keyT);auto(valT)> implicit) : iterator<keyT & const>
     var it : iterator<keyT & const>
     __builtin_table_keys(it,a,typeinfo(sizeof type<keyT>))
@@ -370,11 +372,13 @@ def values(a:table<auto(keyT);void> =const implicit)
 def values(var a:table<auto(keyT);void> =const implicit)
     concept_assert(false,"can't iterate over values of a table<...;void>")
 
+[unsafe_outside_of_for]
 def values(a:table<auto(keyT);auto(valT)> =const implicit) : iterator<valT & const>
     var it : iterator<valT & const>
     __builtin_table_values(it,a,typeinfo(sizeof type<valT>))
     return <- it
 
+[unsafe_outside_of_for]
 def values(var a:table<auto(keyT);auto(valT)> =const implicit) : iterator<valT &>
     var it : iterator<valT &>
     __builtin_table_values(it,a,typeinfo(sizeof type<valT>))
@@ -449,13 +453,13 @@ def iter_range ( foo )
     concept_assert(typeinfo(is_iterable foo),"requires iterable")
     return range(_::length(foo)) // assuming length(foo) exists
 
-[generic,unsafe_operation]
+[generic,unsafe_outside_of_for]
 def each ( str : string ) : iterator<int>
     var it : iterator<int>
     _builtin_make_string_iterator(it,str)
     return <- it
 
-[unsafe_operation]
+[unsafe_outside_of_for]
 def each ( a : auto(TT)[] ) : iterator<TT&>
     unsafe
         var parr : void? = reinterpret<void?>(addr(a[0]))
@@ -463,7 +467,7 @@ def each ( a : auto(TT)[] ) : iterator<TT&>
         _builtin_make_fixed_array_iterator(it,parr,typeinfo(dim a),typeinfo(sizeof a[0]))
         return <- it
 
-[unsafe_operation]
+[unsafe_outside_of_for]
 def each ( a : array<auto(TT)> ) : iterator<TT&>
     var it : iterator<TT&>
     _builtin_make_good_array_iterator(it, a, typeinfo(sizeof a[0]))
@@ -494,12 +498,14 @@ def nothing( var it : iterator<auto(TT)> ) : iterator<TT>
     _builtin_make_nil_iterator(it)
     return <- it
 
+[skip_lock_check]
 def to_array ( it : iterator<auto(TT)> ) : array<TT -const -&>
     var arr : array<TT -const -&>
     for x in it
         push_clone(arr,x)
     return <- arr
 
+[skip_lock_check]
 def to_array(a:auto(TT)[]) : array<TT -const>
     var arr : array<TT -const>
     resize(arr,length(a))
@@ -507,6 +513,7 @@ def to_array(a:auto(TT)[]) : array<TT -const>
         reinterpret<TT -const[typeinfo(dim a)]>(addr(arr[0])) := a
     return <- arr
 
+[skip_lock_check]
 def to_array_move(var a:auto(TT)[]) : array<TT -const>
     var arr : array<TT -const>
     static_if typeinfo(can_copy a)
@@ -521,6 +528,7 @@ def to_array_move(var a:auto(TT)[]) : array<TT -const>
         concept_assert(false,"this array can't be copied or moved")
     return <- arr
 
+[skip_lock_check]
 def to_array_move(var a:auto(TT)) : array<TT -const>
     var arr : array<TT -const>
     static_if typeinfo(can_copy a)
@@ -531,24 +539,28 @@ def to_array_move(var a:auto(TT)) : array<TT -const>
         concept_assert(false,"this array can't be copied or moved")
     return <- arr
 
+[skip_lock_check]
 def to_table(a:tuple<auto(keyT);auto(valT)>[]) : table<keyT -const;valT>
     var tab : table<keyT -const;valT>
     for x in a
         tab[x._0] := x._1
     return <- tab
 
+[skip_lock_check]
 def to_table(a:auto(keyT)[]) : table<keyT -const;void>
     var tab : table<keyT -const;void>
     for at in a
         __builtin_table_set_insert(tab,at)
     return <- tab
 
+[skip_lock_check]
 def to_table_move(var a:auto(keyT)[]) : table<keyT -const;void>
     var tab : table<keyT -const;void>
     for at in a
         __builtin_table_set_insert(tab,at)
     return <- tab
 
+[skip_lock_check]
 def to_table_move(var a:tuple<auto(keyT);auto(valT)>[]) : table<keyT -const;valT>
     var tab : table<keyT -const;valT>
     static_if typeinfo(can_copy type<valT>)
@@ -807,3 +819,8 @@ def move_to_ref ( var a : auto &; var b )
             concept_assert(false, "type is not movable")
     else
         a = b
+
+def clear ( var t : table<auto(KT); auto(VT)> )
+    static_if typeinfo(need_lock_check type<VT>)
+        _builtin_verify_locks(t)
+    _builtin_table_clear(t)

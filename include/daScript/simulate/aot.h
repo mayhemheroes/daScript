@@ -103,13 +103,13 @@ namespace das {
         return a != b;
     }
 
-    template <typename TT>
-    __forceinline bool das_equ_val ( TT a, TT b ) {
+    template <typename TT, typename QQ>
+    __forceinline bool das_equ_val ( TT a, QQ b ) {
         return a == b;
     }
 
-    template <typename TT>
-    __forceinline bool das_nequ_val ( TT a, TT b ) {
+    template <typename TT, typename QQ>
+    __forceinline bool das_nequ_val ( TT a, QQ b ) {
         return a != b;
     }
 
@@ -125,6 +125,16 @@ namespace das {
         memset(__context__->globals + offset, 0, sizeof(TT));
     }
 
+    template <typename TT, uint32_t offset>
+    __forceinline TT & das_global_solid ( Context * __context__ ) {
+        return *(TT *)(__context__->globals + offset);
+    }
+
+    template <typename TT, uint32_t offset>
+    __forceinline void das_global_zero_solid ( Context * __context__ ) {
+        memset(__context__->globals + offset, 0, sizeof(TT));
+    }
+
     template <typename TT, uint64_t mnh>
     __forceinline TT & das_shared ( Context * __context__ ) {
         uint32_t offset =  __context__->globalOffsetByMangledName(mnh);
@@ -134,6 +144,16 @@ namespace das {
     template <typename TT, uint64_t mnh>
     __forceinline void das_shared_zero ( Context * __context__ ) {
         uint32_t offset =  __context__->globalOffsetByMangledName(mnh);
+        memset(__context__->shared + offset, 0, sizeof(TT));
+    }
+
+    template <typename TT, uint32_t offset>
+    __forceinline TT & das_shared_solid ( Context * __context__ ) {
+        return *(TT *)(__context__->shared + offset);
+    }
+
+    template <typename TT, uint32_t offset>
+    __forceinline void das_shared_zero_solid ( Context * __context__ ) {
         memset(__context__->shared + offset, 0, sizeof(TT));
     }
 
@@ -189,6 +209,12 @@ namespace das {
             return *((TT *)&a);
         }
         static __forceinline TT & pass ( TT & a ) {
+            return a;
+        }
+        static __forceinline const TT & pass ( const TT && a ) {
+            return *((const TT *)&a);
+        }
+        static __forceinline const TT & pass ( const TT & a ) {
             return a;
         }
     };
@@ -650,6 +676,16 @@ namespace das {
         }
     };
 
+    template <>
+    struct das_index<char * const * const> {
+        static __forceinline char * & at ( char * const * const value, int32_t index, Context * ) {
+            return (char * &)(value[index]);
+        }
+        static __forceinline char * & at ( const char **const value, int32_t index, Context * ) {
+            return (char * &)(value[index]);
+        }
+    };
+
     template <typename TT, int size>
     struct TDim {
         using THIS_TYPE = TDim<TT, size>;
@@ -706,7 +742,8 @@ namespace das {
         }
     };
 
-    __forceinline bool is_char_in_set ( int32_t ch, const TDim<uint32_t,8> & bitset ) {
+    __forceinline bool is_char_in_set ( int32_t ch, const TDim<uint32_t,8> & bitset, Context * ctx, LineInfoArg * at ) {
+        if ( ch<0 || ch>=256 ) ctx->throw_error_at(at ? *at : LineInfo(),"invalid character %d", ch);
         return bitset[ch>>5] & (1u<<uint32_t(ch));
     }
 
@@ -1611,7 +1648,7 @@ namespace das {
         __forceinline SimNode_Aot ( ) : SimNode_CallBase(LineInfo()) {
             aotFunction = (void*) fn;
         }
-        virtual vec4f eval ( Context & context ) override {
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
             DAS_PROFILE_NODE
             vec4f * aa = context.abiArg;
             vec4f stub[1];
@@ -1626,7 +1663,7 @@ namespace das {
     template <typename FuncT, FuncT fn>
     struct SimNode_AotCMRES : SimNode_CallBase {
         __forceinline SimNode_AotCMRES ( ) : SimNode_CallBase(LineInfo()) {}
-        virtual vec4f eval ( Context & context ) override {
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
             DAS_PROFILE_NODE
             vec4f * aa = context.abiArg;
             vec4f stub[1];
@@ -1645,7 +1682,7 @@ namespace das {
 
     struct SimNode_AotInteropBase : SimNode_CallBase {
         __forceinline SimNode_AotInteropBase() : SimNode_CallBase(LineInfo()) {}
-        virtual vec4f eval ( Context & context ) override {
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
             DAS_PROFILE_NODE
             return v_zero();
         };
@@ -1732,6 +1769,7 @@ namespace das {
             stackOffset = context->stack.spi();
             argumentsOffset = argStackTop ? (context->stack.spi() + argStackTop) : 0;
             body = this;
+            jitFunction = nullptr;
             functionArguments = context->abiArguments();
             info = fi;
         }
@@ -1749,7 +1787,7 @@ namespace das {
         __forceinline resType callBlockFunction(vec4f * args, index_sequence<I...>) {
             return blockFunction((cast<argType>::to(args[I]))...);
         }
-        virtual vec4f eval ( Context & context ) override {
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
             DAS_PROFILE_NODE
             vec4f ** arguments = (vec4f **)(context.stack.bottom() + argumentsOffset);
             using Indices = make_index_sequence<sizeof...(argType)>;
@@ -1771,7 +1809,7 @@ namespace das {
                 : das_make_block_base(context,argStackTop,ann,fi), blockFunction(func) {
             aotFunction = &blockFunction;
         };
-        virtual vec4f eval ( Context & context ) override {
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
             DAS_PROFILE_NODE
             return cast<resType>::from(blockFunction());
         }
@@ -1786,7 +1824,7 @@ namespace das {
                 : das_make_block_base(context,argStackTop,ann,fi), blockFunction(func) {
             aotFunction = &blockFunction;
         };
-        virtual vec4f eval ( Context & context ) override {
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
             DAS_PROFILE_NODE
             blockFunction ( );
             return v_zero();
@@ -1810,7 +1848,7 @@ namespace das {
         __forceinline void callBlockFunction(vec4f * args, index_sequence<I...>) {
             blockFunction((cast<argType>::to(args[I]))...);
         }
-        virtual vec4f eval ( Context & context ) override {
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
             DAS_PROFILE_NODE
             vec4f ** arguments = (vec4f **)(context.stack.bottom() + argumentsOffset);
             using Indices = make_index_sequence<sizeof...(argType)>;
@@ -1832,7 +1870,7 @@ namespace das {
         __forceinline resType callBlockFunction(vec4f * args, index_sequence<I...>) {
             return blockFunction((cast<argType>::to(args[I]))...);
         }
-        virtual vec4f eval ( Context & context ) override {
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
             DAS_PROFILE_NODE
             auto ba = (BlockArguments *) ( context.stack.bottom() + argumentsOffset );
             using ResultType = typename remove_const<resType>::type;
@@ -1852,7 +1890,7 @@ namespace das {
                 : das_make_block_base(context,argStackTop,ann,fi), blockFunction(func) {
             aotFunction = &blockFunction;
         };
-        virtual vec4f eval ( Context & context ) override {
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
             DAS_PROFILE_NODE
             auto ba = (BlockArguments *) ( context.stack.bottom() + argumentsOffset );
             using ResultType = typename remove_const<resType>::type;
@@ -2024,6 +2062,73 @@ namespace das {
             __context__->callOrFastcall(simFunc, arguments, __lineinfo__);
         }
     };
+
+    template <typename ResType>
+    struct das_invoke_function_by_name {
+        static __forceinline ResType invoke ( Context * __context__, LineInfo * __lineinfo__, const char * funcName ) {
+            if (!funcName) __context__->throw_error("invoke null function");
+            bool unique = false;
+            SimFunction * simFunc = __context__->findFunction(funcName, unique);
+            if (!simFunc) __context__->throw_error("invoke null function");
+            if (!unique) __context__->throw_error_ex("invoke non-unique function ", funcName);
+            if ( simFunc->cmres ) __context__->throw_error_ex("can't dynamically invoke function %s, which returns by reference",funcName);
+            if ( simFunc->unsafe ) __context__->throw_error_ex("can't dynamically invoke unsafe function %s",funcName);
+            if ( simFunc->aotFunction ) {
+                using fnPtrType = ResType (*) ( Context * );
+                auto fnPtr = (fnPtrType) simFunc->aotFunction;
+                return (*fnPtr) ( __context__ );
+            } else {
+                vec4f result = __context__->callOrFastcall(simFunc, nullptr, __lineinfo__);
+                return cast<ResType>::to(result);
+            }
+        }
+        template <typename ...ArgType>
+        static __forceinline ResType invoke ( Context * __context__, LineInfo * __lineinfo__, const char * funcName, ArgType ...arg ) {
+            if (!funcName) __context__->throw_error("invoke null function");
+            bool unique = false;
+            SimFunction * simFunc = __context__->findFunction(funcName, unique);
+            if (!simFunc) __context__->throw_error("invoke null function");
+            if (!unique) __context__->throw_error_ex("invoke non-unique function ", funcName);
+            if ( simFunc->cmres ) __context__->throw_error_ex("can't dynamically invoke function %s, which returns by reference",funcName);
+            if ( simFunc->unsafe ) __context__->throw_error_ex("can't dynamically invoke unsafe function %s",funcName);
+            if ( simFunc->aotFunction ) {
+                using fnPtrType = ResType (*) ( Context *, ArgType... );
+                auto fnPtr = (fnPtrType) simFunc->aotFunction;
+                return (*fnPtr) ( __context__, forward<ArgType>(arg)... );
+            } else {
+                vec4f arguments [] = { cast<ArgType>::from(arg)... };
+                vec4f result = __context__->callOrFastcall(simFunc, arguments, __lineinfo__);
+                return cast<ResType>::to(result);
+            }
+        }
+    };
+
+    template <>
+    struct das_invoke_function_by_name<void> {
+        static __forceinline void invoke ( Context * __context__, LineInfo * __lineinfo__, const char * funcName ) {
+            if (!funcName) __context__->throw_error("invoke null function");
+            bool unique = false;
+            SimFunction * simFunc = __context__->findFunction(funcName, unique);
+            if (!simFunc) __context__->throw_error("invoke null function");
+            if (!unique) __context__->throw_error_ex("invoke non-unique function ", funcName);
+            if ( simFunc->cmres ) __context__->throw_error_ex("can't dynamically invoke function %s, which returns by reference",funcName);
+            if ( simFunc->unsafe ) __context__->throw_error_ex("can't dynamically invoke unsafe function %s",funcName);
+            __context__->callOrFastcall(simFunc, nullptr, __lineinfo__);
+        }
+        template <typename ...ArgType>
+        static __forceinline void invoke ( Context * __context__, LineInfo * __lineinfo__, const char * funcName, ArgType ...arg ) {
+            vec4f arguments [] = { cast<ArgType>::from(arg)... };
+            if (!funcName) __context__->throw_error("invoke null function");
+            bool unique = false;
+            SimFunction * simFunc = __context__->findFunction(funcName, unique);
+            if (!simFunc) __context__->throw_error("invoke null function");
+            if (!unique) __context__->throw_error_ex("invoke non-unique function ", funcName);
+            if ( simFunc->cmres ) __context__->throw_error_ex("can't dynamically invoke function %s, which returns by reference",funcName);
+            if ( simFunc->unsafe ) __context__->throw_error_ex("can't dynamically invoke unsafe function %s",funcName);
+            __context__->callOrFastcall(simFunc, arguments, __lineinfo__);
+        }
+    };
+
 
     template <typename ResType>
     struct das_invoke_lambda {
@@ -2336,6 +2441,14 @@ namespace das {
         vec.insert(vec.begin() + at, value);
     }
 
+    template <typename TT>
+    __forceinline void das_vector_push_empty ( TT & vec, int32_t at, Context * context ) {
+        if ( uint32_t(at)>vec.size() ) {
+            context->throw_error_ex("insert index out of range, %i of %u", at, uint32_t(vec.size()));
+        }
+        vec.emplace(vec.begin() + at);
+    }
+
     template <typename TT, typename QQ = typename TT::value_type>
     __forceinline void das_vector_emplace ( TT & vec, QQ & value, int32_t at ) {
         vec.emplace(vec.begin()+at, move(value));
@@ -2349,6 +2462,11 @@ namespace das {
     template <typename TT, typename QQ = typename TT::value_type>
     __forceinline void das_vector_push_back_value ( TT & vec, QQ value ) {
         vec.push_back(value);
+    }
+
+    template <typename TT>
+    __forceinline void das_vector_push_back_empty ( TT & vec ) {
+        vec.emplace_back();
     }
 
     template <typename TT, typename QQ = typename TT::value_type>
@@ -2405,6 +2523,7 @@ namespace das {
     };
 
     char * to_das_string(const string & str, Context * ctx);
+    char * pass_string( char * str );
     void set_das_string(string & str, const char * bs);
     void set_string_das(char * & bs, const string & str, Context * ctx);
 
@@ -2419,6 +2538,30 @@ namespace das {
     __forceinline uint32_t enum8_to_uint  ( EnumStub8 stub )  { return uint32_t(stub.value); }
     __forceinline uint32_t enum16_to_uint ( EnumStub16 stub ) { return uint32_t(stub.value); }
 
+    __forceinline int8_t enum_to_int8   ( EnumStub stub )   { return int8_t(stub.value); }
+    __forceinline int8_t enum8_to_int8  ( EnumStub8 stub )  { return int8_t(stub.value); }
+    __forceinline int8_t enum16_to_int8 ( EnumStub16 stub ) { return int8_t(stub.value); }
+
+    __forceinline uint8_t enum_to_uint8   ( EnumStub stub )   { return uint8_t(stub.value); }
+    __forceinline uint8_t enum8_to_uint8  ( EnumStub8 stub )  { return uint8_t(stub.value); }
+    __forceinline uint8_t enum16_to_uint8 ( EnumStub16 stub ) { return uint8_t(stub.value); }
+
+    __forceinline int16_t enum_to_int16   ( EnumStub stub )   { return int16_t(stub.value); }
+    __forceinline int16_t enum8_to_int16  ( EnumStub8 stub )  { return int16_t(stub.value); }
+    __forceinline int16_t enum16_to_int16 ( EnumStub16 stub ) { return int16_t(stub.value); }
+
+    __forceinline uint16_t enum_to_uint16   ( EnumStub stub )   { return uint16_t(stub.value); }
+    __forceinline uint16_t enum8_to_uint16  ( EnumStub8 stub )  { return uint16_t(stub.value); }
+    __forceinline uint16_t enum16_to_uint16 ( EnumStub16 stub ) { return uint16_t(stub.value); }
+
+    __forceinline int64_t enum_to_int64   ( EnumStub stub )   { return int64_t(stub.value); }
+    __forceinline int64_t enum8_to_int64  ( EnumStub8 stub )  { return int64_t(stub.value); }
+    __forceinline int64_t enum16_to_int64 ( EnumStub16 stub ) { return int64_t(stub.value); }
+
+    __forceinline uint64_t enum_to_uint64   ( EnumStub stub )   { return uint64_t(stub.value); }
+    __forceinline uint64_t enum8_to_uint64  ( EnumStub8 stub )  { return uint64_t(stub.value); }
+    __forceinline uint64_t enum16_to_uint64 ( EnumStub16 stub ) { return uint64_t(stub.value); }
+
 
     template <typename CType>
     struct das_using {
@@ -2428,32 +2571,32 @@ namespace das {
             block ( value );
         }
         template <typename TT, typename A1>
-        static __forceinline void use ( A1 a1, TT && block ) {
+        static __forceinline void use ( A1 && a1, TT && block ) {
             CType value ( a1 );
             block ( value );
         }
         template <typename TT, typename A1, typename A2>
-        static __forceinline void use ( A1 a1, A2 a2, TT && block ) {
+        static __forceinline void use ( A1 && a1, A2 && a2, TT && block ) {
             CType value ( a1, a2 );
             block ( value );
         }
         template <typename TT, typename A1, typename A2, typename A3>
-        static __forceinline void use ( A1 a1, A2 a2, A3 a3, TT && block ) {
+        static __forceinline void use ( A1 && a1, A2 && a2, A3 && a3, TT && block ) {
             CType value ( a1, a2, a3 );
             block ( value );
         }
         template <typename TT, typename A1, typename A2, typename A3, typename A4>
-        static __forceinline void use ( A1 a1, A2 a2, A3 a3, A4 a4, TT && block ) {
+        static __forceinline void use ( A1 && a1, A2 && a2, A3 && a3, A4 && a4, TT && block ) {
             CType value ( a1, a2, a3, a4 );
             block ( value );
         }
         template <typename TT, typename A1, typename A2, typename A3, typename A4, typename A5>
-        static __forceinline void use ( A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, TT && block ) {
+        static __forceinline void use ( A1 && a1, A2 && a2, A3 && a3, A4 && a4, A5 && a5, TT && block ) {
             CType value ( a1, a2, a3, a4, a5 );
             block ( value );
         }
         template <typename TT, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6>
-        static __forceinline void use ( A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, TT && block ) {
+        static __forceinline void use ( A1 && a1, A2 && a2, A3 && a3, A4 && a4, A5 && a5, A6 && a6, TT && block ) {
             CType value ( a1, a2, a3, a4, a5, a6 );
             block ( value );
         }
@@ -2625,15 +2768,22 @@ namespace das {
 
     template <typename TT>
     void builtin_sort_cblock ( vec4f arr, int32_t, int32_t length, const TBlock<bool,TT,TT> & cmp, Context * context, LineInfoArg * lineinfo ) {
-        vec4f bargs[2];
         auto data = cast<TT *>::to(arr);
-        context->invokeEx(cmp, bargs, nullptr, [&](SimNode * code) {
+        if ( cmp.jitFunction ) {
+            auto cmpFn = (bool (*)(TT,TT,const Block &,Context *)) cmp.jitFunction;
             sort ( data, data+length, [&](TT x, TT y) -> bool {
-                bargs[0] = cast<TT>::from(x);
-                bargs[1] = cast<TT>::from(y);
-                return code->evalBool(*context);
+                return cmpFn(x,y,cmp,context);
             });
-        },lineinfo);
+        } else {
+            vec4f bargs[2];
+            context->invokeEx(cmp, bargs, nullptr, [&](SimNode * code) {
+                sort ( data, data+length, [&](TT x, TT y) -> bool {
+                    bargs[0] = cast<TT>::from(x);
+                    bargs[1] = cast<TT>::from(y);
+                    return code->evalBool(*context);
+                });
+            },lineinfo);
+        }
     }
 
     template <typename CompareFn, typename TT>
@@ -2657,30 +2807,44 @@ namespace das {
     struct scblk_array < const Block &,TT > {
         static __forceinline void srtr ( Array & arr, int32_t, int32_t, const Block & cmp, Context * context, LineInfoArg * lineinfo ) {
             if ( arr.size<=1 ) return;
-            vec4f bargs[2];
             auto data = (TT *) arr.data;
             array_lock(*context, arr);
-            context->invokeEx(cmp, bargs, nullptr, [&](SimNode * code) {
+            if ( cmp.jitFunction ) {
+                auto cmpFn = (bool (*)(TT,TT,const Block &,Context *)) cmp.jitFunction;
                 das::sort ( data, data+arr.size, [&](TT x, TT y) -> bool {
-                    bargs[0] = cast<TT>::from(x);
-                    bargs[1] = cast<TT>::from(y);
-                    return code->evalBool(*context);
+                    return cmpFn(x,y,cmp,context);
                 });
-            },lineinfo);
+            } else {
+                vec4f bargs[2];
+                context->invokeEx(cmp, bargs, nullptr, [&](SimNode * code) {
+                    das::sort ( data, data+arr.size, [&](TT x, TT y) -> bool {
+                        bargs[0] = cast<TT>::from(x);
+                        bargs[1] = cast<TT>::from(y);
+                        return code->evalBool(*context);
+                    });
+                },lineinfo);
+            }
             array_unlock(*context, arr);
         }
         static __forceinline void srt ( Array & arr, int32_t, int32_t, const Block & cmp, Context * context, LineInfoArg * lineinfo ) {
             if ( arr.size<=1 ) return;
-            vec4f bargs[2];
             auto data = (TT *) arr.data;
             array_lock(*context, arr);
-            context->invokeEx(cmp, bargs, nullptr, [&](SimNode * code) {
-                das::sort ( data, data+arr.size, [&](const TT & x, const TT & y) -> bool {
-                    bargs[0] = cast<const TT &>::from(x);
-                    bargs[1] = cast<const TT &>::from(y);
-                    return code->evalBool(*context);
+            if ( cmp.jitFunction ) {
+                auto cmpFn = (bool (*)(const TT &,const TT &,const Block &,Context *)) cmp.jitFunction;
+                das::sort ( data, data+arr.size, [&](const TT & x,const TT & y) -> bool {
+                    return cmpFn(x,y,cmp,context);
                 });
-            },lineinfo);
+            } else {
+                vec4f bargs[2];
+                context->invokeEx(cmp, bargs, nullptr, [&](SimNode * code) {
+                    das::sort ( data, data+arr.size, [&](const TT & x, const TT & y) -> bool {
+                        bargs[0] = cast<const TT &>::from(x);
+                        bargs[1] = cast<const TT &>::from(y);
+                        return code->evalBool(*context);
+                    });
+                },lineinfo);
+            }
             array_unlock(*context, arr);
         }
     };
@@ -2736,6 +2900,26 @@ namespace das {
     __forceinline float4 float4_from_x_yz_w ( float x, float2 yz, float w ) { return float4(x, yz.x, yz.y, w); }
     __forceinline float4 float4_from_x_y_zw ( float x, float y, float2 zw ) { return float4(x, y, zw.x, zw.y); }
 
+    __forceinline int3 int3_from_xy_z ( int2 xy, int32_t z ) { return int3(xy.x, xy.y, z); }
+    __forceinline int3 int3_from_x_yz ( int32_t x, int2 yz ) { return int3(x, yz.x, yz.y); }
+
+    __forceinline int4 int4_from_xyz_w  ( int3 xyz, int32_t w ) { return int4(xyz.x, xyz.y, xyz.z, w); }
+    __forceinline int4 int4_from_x_yzw  ( int32_t x, int3 yzw ) { return int4(x, yzw.x, yzw.y, yzw.z); }
+    __forceinline int4 int4_from_xy_zw  ( int2 xy, int2 zw ) { return int4(xy.x, xy.y, zw.x, zw.y); }
+    __forceinline int4 int4_from_xy_z_w ( int2 xy, int32_t z, int32_t w ) { return int4(xy.x, xy.y, z, w); }
+    __forceinline int4 int4_from_x_yz_w ( int32_t x, int2 yz, int32_t w ) { return int4(x, yz.x, yz.y, w); }
+    __forceinline int4 int4_from_x_y_zw ( int32_t x, int32_t y, int2 zw ) { return int4(x, y, zw.x, zw.y); }
+
+    __forceinline uint3 uint3_from_xy_z ( uint2 xy, uint32_t z ) { return uint3(xy.x, xy.y, z); }
+    __forceinline uint3 uint3_from_x_yz ( uint32_t x, uint2 yz ) { return uint3(x, yz.x, yz.y); }
+
+    __forceinline uint4 uint4_from_xyz_w  ( uint3 xyz, uint32_t w ) { return uint4(xyz.x, xyz.y, xyz.z, w); }
+    __forceinline uint4 uint4_from_x_yzw  ( uint32_t x, uint3 yzw ) { return uint4(x, yzw.x, yzw.y, yzw.z); }
+    __forceinline uint4 uint4_from_xy_zw  ( uint2 xy, uint2 zw ) { return uint4(xy.x, xy.y, zw.x, zw.y); }
+    __forceinline uint4 uint4_from_xy_z_w ( uint2 xy, uint32_t z, uint32_t w ) { return uint4(xy.x, xy.y, z, w); }
+    __forceinline uint4 uint4_from_x_yz_w ( uint32_t x, uint2 yz, uint32_t w ) { return uint4(x, yz.x, yz.y, w); }
+    __forceinline uint4 uint4_from_x_y_zw ( uint32_t x, uint32_t y, uint2 zw ) { return uint4(x, y, zw.x, zw.y); }
+
 #define STR_DSTR_OP(OPNAME,EXPR) \
     __forceinline bool  OPNAME##_str_dstr ( const char * str, const string & dstr ) { return strcmp(to_rts(str), dstr.c_str()) EXPR 0; } \
     __forceinline bool  OPNAME##_dstr_str ( const string & dstr, const char * str ) { return strcmp(dstr.c_str(), to_rts(str)) EXPR 0; }
@@ -2746,6 +2930,58 @@ namespace das {
     STR_DSTR_OP(lseq,<=);
     STR_DSTR_OP(  ls,<);
     STR_DSTR_OP(  gt,>);
+
+    __forceinline uint32_t uint32_clz ( uint32_t x ) { return das_clz(x); }
+    __forceinline uint64_t uint64_clz ( uint64_t x ) { return das_clz64(x); }
+    __forceinline uint32_t uint32_ctz ( uint32_t x ) { return das_ctz(x); }
+    __forceinline uint64_t uint64_ctz ( uint64_t x ) { return das_ctz64(x); }
+    __forceinline uint32_t uint32_popcount ( uint32_t x ) { return das_popcount(x); }
+    __forceinline uint64_t uint64_popcount ( uint64_t x ) { return das_popcount64(x); }
+
+    __forceinline uint32_t char_set_total ( const TDim<uint32_t,8> & bitset ) {
+        uint32_t total = 0;
+        for ( auto t=0; t!=8; ++t) {
+            auto bits = bitset[t];
+            while ( bits ) { bits &= bits-1; ++total; }
+        }
+        return total;
+    }
+    __forceinline int32_t char_set_element ( int32_t idx, const TDim<uint32_t,8> & bitset ) {
+        int32_t index = 0;
+        for ( auto t=0; t!=8; ++t ) {
+            auto bits = bitset[t];
+            while ( bits ) {
+                auto bit = das_ctz(bits);
+                if ( index==idx ) return t*32+bit;
+                bits ^= 1<<bit; index ++;
+            }
+        }
+        return -1;
+    }
+
+    float4 das_invoke_code ( void * pfun, vec4f anything, void * cmres, Context * context );
+    bool das_is_jit_function ( const Func func );
+    bool das_remove_jit ( const Func func );
+    bool das_instrument_jit ( void * pfun, const Func func, Context * context );
+    void * das_get_jit_exception ();
+    void * das_get_jit_call_or_fastcall ();
+    void * das_get_jit_call_with_cmres ( );
+    void * das_get_jit_invoke_block ( );
+    void * das_get_jit_invoke_block_with_cmres ( );
+    void * das_get_jit_string_builder ();
+    void * das_get_jit_get_global_mnh ();
+    void * das_get_jit_alloc_heap ();
+    void * das_get_jit_alloc_persistent ();
+    void * das_get_jit_free_heap ();
+    void * das_get_jit_free_persistent ();
+    void * das_get_jit_array_lock ();
+    void * das_get_jit_array_unlock ();
+    void * das_get_jit_table_at ( int32_t baseType, Context * context, LineInfoArg * at );
+    void * das_get_jit_str_cmp ();
+    void * das_get_jit_prologue ();
+    void * das_get_jit_epilogue ();
+    void * das_get_jit_make_block ();
+    void * das_get_jit_debug ();
 }
 
 #if defined(_MSC_VER)

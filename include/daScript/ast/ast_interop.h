@@ -3,6 +3,7 @@
 #include "daScript/ast/ast.h"
 #include "daScript/ast/ast_visitor.h"
 #include "daScript/simulate/interop.h"
+#include "daScript/simulate/jit_abi.h"
 #include "daScript/simulate/aot.h"
 
 namespace das
@@ -52,6 +53,9 @@ namespace das
             return context.code->makeNode<SimNodeT>(at, fnName);
 #endif
         }
+        virtual void * getBuiltinAddress() const override {
+            return ImplWrapCall<NeedVectorWrap<FuncT>::value, FuncT, fn>::get_builtin_address();
+        }
     };
 
     template  <InteropFunction func, typename RetT, typename ...Args>
@@ -67,6 +71,7 @@ namespace das
             const char * fnName = context.code->allocateName(this->name);
             return context.code->makeNode<SimNode_InteropFuncCall<func>>(BuiltInFunction::at,fnName);
         }
+        virtual void * getBuiltinAddress() const override { return (void *) func; }
     };
 
     struct defaultTempFn {
@@ -179,6 +184,27 @@ namespace das
         using SimNodeType = SimNodeT<FuncT, fn>;
         auto fnX = make_smart<ExternalFn<FuncT, fn, SimNodeType, FuncArgT>>(name, lib, cppName);
 #endif
+        addExternFunc(mod, fnX, SimNodeType::IS_CMRES, seFlags);
+        return fnX;
+    }
+
+#if DAS_SLOW_CALL_INTEROP
+    template <typename FuncT, FuncT fn, template <typename FuncTT> class SimNodeT = SimNode_ExtFuncCallRef, typename QQ = defaultTempFn>
+#else
+    template <typename FuncT, FuncT fn, template <typename FuncTT, FuncTT fnt> class SimNodeT = SimNode_ExtFuncCallRef, typename QQ = defaultTempFn>
+#endif
+    inline auto addExternTempRef ( Module & mod, const ModuleLibrary & lib, const char * name, SideEffects seFlags,
+        const char * cppName = nullptr, QQ && tempFn = QQ() )
+    {
+#if DAS_SLOW_CALL_INTEROP
+        using SimNodeType = SimNodeT<FuncT>;
+        auto fnX = make_smart<ExternalFn<FuncT, SimNodeType, FuncT>>(fn, name, lib, cppName);
+#else
+        using SimNodeType = SimNodeT<FuncT, fn>;
+        auto fnX = make_smart<ExternalFn<FuncT, fn, SimNodeType, FuncT>>(name, lib, cppName);
+#endif
+        tempFn(fnX.get());
+        fnX->result->temporary = true;
         addExternFunc(mod, fnX, SimNodeType::IS_CMRES, seFlags);
         return fnX;
     }

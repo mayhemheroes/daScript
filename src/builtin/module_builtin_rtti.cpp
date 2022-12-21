@@ -205,9 +205,19 @@ namespace das {
         }
     };
 
+    TypeDeclPtr makeModuleFlags() {
+        auto ft = make_smart<TypeDecl>(Type::tBitfield);
+        ft->alias = "ModuleFlags";
+        ft->argNames = {
+            "builtIn", "promoted", "isPublic", "isModule", "isSolidContext"
+        };
+        return ft;
+    }
+
     struct ModuleAnnotation : ManagedStructureAnnotation<Module,false> {
         ModuleAnnotation(ModuleLibrary & ml) : ManagedStructureAnnotation ("Module", ml) {
             addField<DAS_BIND_MANAGED_FIELD(name)>("name");
+            addFieldEx ( "moduleFlags", "moduleFlags", offsetof(Module, moduleFlags), makeModuleFlags() );
         }
     };
 
@@ -245,7 +255,8 @@ namespace das {
     TypeDeclPtr makeContextCategoryFlags() {
         auto ft = make_smart<TypeDecl>(Type::tBitfield);
         ft->alias = "context_category_flags";
-        ft->argNames = { "dead", "debug_context", "thread_clone", "job_clone", "opengl", "debugger_tick", "debugger_attached" };
+        ft->argNames = { "dead", "debug_context", "thread_clone", "job_clone", "opengl",
+            "debugger_tick", "debugger_attached", "macro_context", "folding_context" };
         return ft;
     }
 
@@ -270,6 +281,8 @@ namespace das {
                 "getTotalFunctions");
             addProperty<DAS_BIND_MANAGED_PROP(getTotalVariables)>("totalVariables",
                 "getTotalVariables");
+            addProperty<DAS_BIND_MANAGED_PROP(getCodeAllocatorId)>("getCodeAllocatorId",
+                "getCodeAllocatorId");
         }
         virtual void walk ( das::DataWalker & walker, void * data ) override {
             if ( !walker.reading ) {
@@ -287,7 +300,7 @@ namespace das {
     TypeDeclPtr makeSimFunctionFlags() {
         auto ft = make_smart<TypeDecl>(Type::tBitfield);
         ft->alias = "SimFunctionFlags";
-        ft->argNames = { "aot", "fastcall", "builtin", "jit" };
+        ft->argNames = { "aot", "fastcall", "builtin", "jit", "unsafe", "cmres" };
         return ft;
     }
 
@@ -298,6 +311,7 @@ namespace das {
             addField<DAS_BIND_MANAGED_FIELD(debugInfo)>("debugInfo");
             addField<DAS_BIND_MANAGED_FIELD(stackSize)>("stackSize");
             addField<DAS_BIND_MANAGED_FIELD(mangledNameHash)>("mangledNameHash");
+            addProperty<DAS_BIND_MANAGED_PROP(getLineInfo)>("lineInfo","getLineInfo");
             addFieldEx ( "flags", "flags", offsetof(SimFunction, flags), makeSimFunctionFlags() );
         }
     };
@@ -327,6 +341,7 @@ namespace das {
             addField<DAS_BIND_MANAGED_FIELD(thisModuleName)>("thisModuleName");
             addFieldEx ( "flags", "flags", offsetof(Program, flags), makeProgramFlags() );
             addField<DAS_BIND_MANAGED_FIELD(errors)>("errors");
+            addField<DAS_BIND_MANAGED_FIELD(options)>("_options","options");
         }
     };
 
@@ -359,6 +374,27 @@ namespace das {
             addField<DAS_BIND_MANAGED_FIELD(cppName)>("cppName");
             addField<DAS_BIND_MANAGED_FIELD(module)>("_module","module");
             addProperty<DAS_BIND_MANAGED_PROP(isYetAnotherVectorTemplate)>("is_any_vector","isYetAnotherVectorTemplate");
+            addProperty<DAS_BIND_MANAGED_PROP(canMove)>("canMove");
+            addProperty<DAS_BIND_MANAGED_PROP(canCopy)>("canCopy");
+            addProperty<DAS_BIND_MANAGED_PROP(canClone)>("canClone");
+            addProperty<DAS_BIND_MANAGED_PROP(isPod)>("isPod");
+            addProperty<DAS_BIND_MANAGED_PROP(isRawPod)>("isRawPod");
+            addProperty<DAS_BIND_MANAGED_PROP(isRefType)>("isRefType");
+            addProperty<DAS_BIND_MANAGED_PROP(hasNonTrivialCtor)>("hasNonTrivialCtor");
+            addProperty<DAS_BIND_MANAGED_PROP(hasNonTrivialDtor)>("hasNonTrivialDtor");
+            addProperty<DAS_BIND_MANAGED_PROP(hasNonTrivialCopy)>("hasNonTrivialCopy");
+            addProperty<DAS_BIND_MANAGED_PROP(canBePlacedInContainer)>("canBePlacedInContainer");
+            addProperty<DAS_BIND_MANAGED_PROP(isLocal)>("isLocal");
+            addProperty<DAS_BIND_MANAGED_PROP(canNew)>("canNew");
+            addProperty<DAS_BIND_MANAGED_PROP(canDelete)>("canDelete");
+            addProperty<DAS_BIND_MANAGED_PROP(needDelete)>("needDelete");
+            addProperty<DAS_BIND_MANAGED_PROP(canDeletePtr)>("canDeletePtr");
+            addProperty<DAS_BIND_MANAGED_PROP(isIterable)>("isIterable");
+            addProperty<DAS_BIND_MANAGED_PROP(isShareable)>("isShareable");
+            addProperty<DAS_BIND_MANAGED_PROP(isSmart)>("isSmart");
+            addProperty<DAS_BIND_MANAGED_PROP(avoidNullPtr)>("avoidNullPtr");
+            addProperty<DAS_BIND_MANAGED_PROP(getSizeOf)>("sizeOf", "getSizeOf");
+            addProperty<DAS_BIND_MANAGED_PROP(getAlignOf)>("alignOf", "getAlignOf");
         }
     };
 
@@ -605,6 +641,8 @@ namespace das {
             addField<DAS_BIND_MANAGED_FIELD(heap_size_hint)>("heap_size_hint");
             addField<DAS_BIND_MANAGED_FIELD(string_heap_size_hint)>("string_heap_size_hint");
             addField<DAS_BIND_MANAGED_FIELD(solid_context)>("solid_context");
+            addField<DAS_BIND_MANAGED_FIELD(macro_context_persistent_heap)>("macro_context_persistent_heap");
+            addField<DAS_BIND_MANAGED_FIELD(macro_context_collect)>("macro_context_collect");
         // rtti
             addField<DAS_BIND_MANAGED_FIELD(rtti)>("rtti");
         // language
@@ -629,6 +667,8 @@ namespace das {
             addField<DAS_BIND_MANAGED_FIELD(fail_on_lack_of_aot_export)>("fail_on_lack_of_aot_export");
         // debugger
             addField<DAS_BIND_MANAGED_FIELD(debugger)>("debugger");
+        // profiler
+            addField<DAS_BIND_MANAGED_FIELD(profiler)>("profiler");
         }
         virtual bool isLocal() const override { return true; }
     };
@@ -1099,13 +1139,13 @@ namespace das {
             Prologue * pp = (Prologue *) sp;
             Block * block = nullptr;
             FuncInfo * info = nullptr;
-            char * SP = sp;
+            // char * SP = sp;
             if ( pp->info ) {
                 intptr_t iblock = intptr_t(pp->block);
                 if ( iblock & 1 ) {
                     block = (Block *) (iblock & ~1);
                     info = block->info;
-                    SP = context->stack.bottom() + block->stackOffset;
+                    // SP = context->stack.bottom() + block->stackOffset;
                 } else {
                     info = pp->info;
                 }
@@ -1126,6 +1166,11 @@ namespace das {
     Func builtin_getFunctionByMnh ( uint64_t MNH, Context * context ) {
         return Func(context->fnByMangledName(MNH));
     }
+
+    Func builtin_getFunctionByMnh_inContext ( uint64_t MNH, Context & context ) {
+        return Func(context.fnByMangledName(MNH));
+    }
+
 
     uint64_t builtin_getFunctionMnh ( Func func, Context * ) {
         return func.PTR ? func.PTR->mangledNameHash : 0;
@@ -1148,6 +1193,10 @@ namespace das {
         context->invoke(block, nullptr, nullptr, lineInfo);
     }
 
+    uint64_t das_get_SimFunction_by_MNH ( uint64_t MNH, Context & context ) {
+        return (uint64_t) context.fnByMangledName(MNH);
+    }
+
     class Module_Rtti : public Module {
     public:
         template <typename RecAnn>
@@ -1166,6 +1215,7 @@ namespace das {
             addAlias(makeContextCategoryFlags());
             addAlias(makeTypeInfoFlags());
             addAlias(makeStructInfoFlags());
+            addAlias(makeModuleFlags());
             // enums
             addEnumeration(make_smart<EnumerationCompilationError>());
             // type annotations
@@ -1180,11 +1230,11 @@ namespace das {
             addAnnotation(make_smart<FileAccessAnnotation>(lib));
             addAnnotation(make_smart<ModuleAnnotation>(lib));
             addAnnotation(make_smart<AstModuleGroupAnnotation>(lib));
-            addAnnotation(make_smart<ProgramAnnotation>(lib));
             addEnumeration(make_smart<EnumerationType>());
             addAnnotation(make_smart<AnnotationArgumentAnnotation>(lib));
             addAnnotation(make_smart<ManagedVectorAnnotation<AnnotationArguments>>("AnnotationArguments",lib));
             addAnnotation(make_smart<ManagedVectorAnnotation<AnnotationArgumentList>>("AnnotationArgumentList",lib));
+            addAnnotation(make_smart<ProgramAnnotation>(lib));
             addAnnotation(make_smart<AnnotationAnnotation>(lib));
             addAnnotation(make_smart<AnnotationDeclarationAnnotation>(lib));
             addAnnotation(make_smart<ManagedVectorAnnotation<AnnotationList>>("AnnotationList",lib));
@@ -1213,6 +1263,7 @@ namespace das {
             addConstant<uint32_t>(*this, "FUNCINFO_BUILTIN", uint32_t(FuncInfo::flag_builtin));
             addConstant<uint32_t>(*this, "FUNCINFO_PRIVATE", uint32_t(FuncInfo::flag_private));
             addConstant<uint32_t>(*this, "FUNCINFO_SHUTDOWN", uint32_t(FuncInfo::flag_shutdown));
+            addConstant<uint32_t>(*this, "FUNCINFO_LATE_INIT", uint32_t(FuncInfo::flag_late_init));
             // macros
             addTypeInfoMacro(make_smart<RttiTypeInfoMacro>());
             // ctors
@@ -1357,6 +1408,9 @@ namespace das {
             addExtern<DAS_BIND_FUN(builtin_getFunctionByMnh)>(*this, lib, "get_function_by_mangled_name_hash",
                 SideEffects::none, "builtin_getFunctionByMnh")
                     ->args({"src","context"});
+            addExtern<DAS_BIND_FUN(builtin_getFunctionByMnh_inContext)>(*this, lib, "get_function_by_mangled_name_hash",
+                SideEffects::none, "builtin_getFunctionByMnh_inContext")
+                    ->args({"src","context"});
             addExtern<DAS_BIND_FUN(builtin_getFunctionMnh)>(*this, lib, "get_function_mangled_name_hash",
                 SideEffects::none, "builtin_getFunctionMnh")
                     ->args({"src","context"});
@@ -1370,6 +1424,10 @@ namespace das {
             addExtern<DAS_BIND_FUN(lockAnyMutex)>(*this, lib,  "lock_mutex",
                 SideEffects::worstDefault, "lockAnyMutex")
                     ->args({"mutex","block","context","line"});
+            // in context
+            addExtern<DAS_BIND_FUN(das_get_SimFunction_by_MNH)>(*this, lib, "get_function_address",
+                SideEffects::none, "das_get_SimFunction_by_MNH")
+                    ->args({"MNH","at"});
             // extras
             registerVectorFunctions<AnnotationList>::init(this,lib,false,true);
             registerVectorFunctions<AnnotationArgumentList>::init(this,lib,false,false);

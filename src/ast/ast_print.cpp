@@ -269,11 +269,14 @@ namespace das {
                 if ( fn->aotHashDeppendsOnArguments ) {
                     ss << "[aot_hash_deppends_on_arguments]";
                 }
+                if ( fn->requestJit ) {
+                    ss << "[jit]";
+                }
                 ss << "\n";
             }
             if ( fn->fastCall ) { ss << "[fastcall]\n"; }
             if ( fn->exports ) { ss << "[export]\n"; }
-            if ( fn->init ) { ss << "[init]\n"; }
+            if ( fn->init ) { ss << "[init" << (fn->lateInit ? "(late)" : "") << "]\n"; }
             if ( fn->macroInit ) { ss << "[macro_init]\n"; }
             if ( fn->macroFunction ) { ss << "[macro_function]\n"; }
             if ( fn->shutdown ) { ss << "[finalize]\n"; }
@@ -509,11 +512,12 @@ namespace das {
         virtual void preVisit ( ExprFor * ffor ) override {
             Visitor::preVisit(ffor);
             ss << "for ";
-        }
-        virtual void preVisitFor ( ExprFor * ffor, const VariablePtr & var, bool last ) override {
-            Visitor::preVisitFor(ffor,var,last);
-            ss << var->name;
-            if ( !last ) ss << ","; else ss << " in ";
+            bool first = true;
+            for ( auto i : ffor->iterators ) {
+                if ( first) first = false; else ss << ", ";
+                ss << i;
+            }
+            ss << " ";
         }
         virtual void preVisitForBody ( ExprFor * ffor, Expression * body ) override {
             Visitor::preVisitForBody(ffor, body);
@@ -538,7 +542,7 @@ namespace das {
         }
         virtual void preVisit ( ExprAssume * wh ) override {
             Visitor::preVisit(wh);
-            ss << "with " << wh->alias << " = ";
+            ss << "assume " << wh->alias << " = ";
         }
     // tag
         virtual void preVisit ( ExprTag * expr ) override {

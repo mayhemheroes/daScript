@@ -10,6 +10,21 @@ require ast public
 require strings
 require daslib/strings_boost
 
+typedef AnnotationDeclarationPtr = smart_ptr<AnnotationDeclaration>
+
+def clone ( var args : dasvector`das_string; var nargs:array<string> )
+    let tot = length(nargs)
+    args |> resize ( tot )
+    for i in range(tot)
+        args[i] := nargs[i]
+    delete nargs
+
+def clone ( var args : dasvector`smart_ptr`TypeDecl; var nargs:array<TypeDeclPtr> )
+    args |> clear
+    for narg in nargs
+        args |> emplace(narg)
+    delete nargs
+
 def clone ( var args : dasvector`smart_ptr`Variable; var nargs:array<VariablePtr> )
     args |> clear
     for narg in nargs
@@ -205,27 +220,32 @@ def find_unique_generic ( mod : Module?; name : string; canfail:bool = false )
         return [[FunctionPtr]]
     return res
 
-def setup_call_list(name: string; at:LineInfo; isInit:bool = false; isPrivate:bool = true) : ExprBlock?
+def setup_call_list(name: string; at:LineInfo; subblock:block<(var fn:FunctionPtr):void> ) : ExprBlock?
     var fn <- compiling_module() |> find_unique_function(name)
     if fn == null
         fn <- new [[Function() at=at, atDecl=at, name:="{name}"]]
         fn.flags |= FunctionFlags generated
-        if isInit
-            fn.flags |= FunctionFlags init
-        if isPrivate
-            fn.flags |= FunctionFlags privateFunction
         fn.result <- new [[TypeDecl() baseType=Type autoinfer, at=at]]
         var blk <- new [[ExprBlock() at=at]]
         var res = get_ptr(blk)
         fn.body <- blk
+        invoke(subblock, fn)
         if !(compiling_module() |> add_function(fn))
             panic("failed to setup macro, can't add function {fn.name}")
         return res
-    else
-        if fn.body.__rtti != "ExprBlock"
-            panic("expecting func.ExprBlock")
-        unsafe
-            return reinterpret<ExprBlock?> fn.body
+    elif fn.body.__rtti != "ExprBlock"
+        panic("expecting func.ExprBlock")
+    unsafe
+        return reinterpret<ExprBlock?> fn.body
+
+def setup_call_list(name: string; at:LineInfo; isInit:bool = false; isPrivate:bool = true; isLateInit:bool = false) : ExprBlock?
+    return setup_call_list(name,at) <| $ ( fn )
+        if isInit
+            fn.flags |= FunctionFlags init
+            if isLateInit
+                fn.moreFlags |= MoreFunctionFlags lateInit
+        if isPrivate
+            fn.flags |= FunctionFlags privateFunction
 
 def setup_macro(name: string; at:LineInfo) : ExprBlock?
     compiling_program().flags |= ProgramFlags needMacroModule
@@ -312,6 +332,9 @@ class SetupForLoopMacro : SetupAnyAnnotation
 
 class SetupCaptureMacro : SetupAnyAnnotation
     override annotation_function_call : string = "add_new_capture_macro"
+
+class SetupSimulateMacro : SetupAnyAnnotation
+    override annotation_function_call : string = "add_new_simulate_macro"
 
 class SetupCallMacro : SetupAnyAnnotation
     override annotation_function_call : string = "add_new_call_macro"
@@ -643,6 +666,13 @@ def append_annotation ( var blk:smart_ptr<ExprBlock>; mod_name,ann_name:string; 
     add_block_annotation(blk, decl)
     decl := null
 
+def append_annotation ( var st:smart_ptr<Structure>; mod_name,ann_name:string; args:array< tuple<argname:string;argvalue:RttiValue> > )
+    var ann = find_annotation(mod_name, ann_name)
+    assert(ann!=null)
+    var decl <- append_annotation(mod_name, ann_name, args)
+    add_structure_annotation(st, decl)
+    decl := null
+
 def add_annotation_argument ( var arguments:AnnotationArgumentList; argName:string; val:bool )
     let argIdx = arguments |> add_annotation_argument(argName)
     arguments[argIdx].basicType = Type tBool
@@ -665,6 +695,21 @@ def add_annotation_argument ( var arguments:AnnotationArgumentList; argName:stri
     let argIdx = arguments |> add_annotation_argument(argName)
     arguments[argIdx].basicType = Type tString
     arguments[argIdx].sValue := val
+    return argIdx
+
+def add_annotation_argument ( var arguments:AnnotationArgumentList; ann : rtti::AnnotationArgument )
+    let argIdx = arguments |> add_annotation_argument(string(ann.name))
+    arguments[argIdx].basicType = ann.basicType
+    if ann.basicType == Type tBool
+        arguments[argIdx].bValue = ann.bValue
+    elif ann.basicType == Type tInt
+        arguments[argIdx].iValue = ann.iValue
+    elif ann.basicType == Type tFloat
+        arguments[argIdx].fValue = ann.fValue
+    elif ann.basicType == Type tString
+        arguments[argIdx].sValue := ann.sValue
+    else
+        assert(false, "unsupported annotation type, add more types")
     return argIdx
 
 def get_for_source_index(expr:smart_ptr<ExprFor>; svar:VariablePtr)
@@ -709,6 +754,7 @@ def private setup
         add_new_structure_annotation("variant_macro",new SetupVariantMacro())
         add_new_structure_annotation("for_loop_macro",new SetupForLoopMacro())
         add_new_structure_annotation("capture_macro",new SetupCaptureMacro())
+        add_new_structure_annotation("simulate_macro",new SetupSimulateMacro())
         add_new_structure_annotation("tag_structure",new TagStructureAnnotation())
         add_new_structure_annotation("tag_function_macro",new TagFunctionMacro())
         add_new_structure_annotation("infer_macro",new SetupInferMacro())
@@ -717,3 +763,51 @@ def private setup
         add_new_structure_annotation("lint_macro",new SetupLintMacro())
         add_new_structure_annotation("global_lint_macro",new SetupGlobalLintMacro())
         add_new_variant_macro("better_rtti_in_expr", new BetterRttiVisitor())
+
+
+def public function_to_type ( fn : FunctionPtr ) : TypeDeclPtr
+    var td <- new [[TypeDecl() baseType=Type tFunction]]
+    unsafe
+        td.firstType <- fn.result!=null ? clone_type(fn.result) : new [[TypeDecl() baseType=Type autoinfer]]
+        td.argNames |> resize(length(fn.arguments))
+        for arg,argi in fn.arguments,range(100500)
+            td.argTypes |> emplace_new <| clone_type(arg._type)
+            td.argNames[argi] := arg.name
+    return td
+
+def public visit_finally ( blk:ExprBlock?; adapter:smart_ptr<VisitorAdapter> )
+    unsafe
+        visit_finally(reinterpret<smart_ptr<ExprBlock>> blk, adapter)
+
+def public isCMRES ( fun:FunctionPtr ) : bool
+    return fun.flags.copyOnReturn || fun.flags.moveOnReturn
+
+def public isCMRES ( fun:Function? ) : bool
+    return fun.flags.copyOnReturn || fun.flags.moveOnReturn
+
+def public isMakeLocal ( expr:ExpressionPtr )
+    return ((expr.__rtti=="ExprMakeLocal")
+        ||  (expr.__rtti=="ExprMakeStruct")
+        ||  (expr.__rtti=="ExprMakeVariant")
+        ||  (expr.__rtti=="ExprMakeArray")
+        ||  (expr.__rtti=="ExprMakeTuple"))
+
+def public get_workhorse_types
+    return [[auto
+        Type tBool;             Type tInt8;             Type tUInt8;            Type tInt16;
+        Type tUInt16;           Type tInt64;            Type tUInt64;           Type tEnumeration;
+        Type tEnumeration8;     Type tEnumeration16;    Type tInt;              Type tInt2;
+        Type tInt3;             Type tInt4;             Type tUInt;             Type tBitfield;
+        Type tUInt2;            Type tUInt3;            Type tUInt4;            Type tFloat;
+        Type tFloat2;           Type tFloat3;           Type tFloat4;           Type tRange;
+        Type tURange;           Type tString;           Type tDouble;           Type tPointer
+    ]]
+
+def public find_argument_index ( typ:TypeDeclPtr; name:string )
+    for a,ai in typ.argNames,range(100500)
+        if a==name
+            return ai
+    return -1
+
+def public isCMRESType ( blockT:TypeDeclPtr )
+    return blockT!=null && blockT.isRefType && !blockT.flags.ref

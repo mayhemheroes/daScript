@@ -226,6 +226,13 @@ namespace das {
         }
     }
 
+    void Module::CollectSharedModules() {
+        Module::foreach([&](Module * mod){
+            if ( mod->macroContext ) mod->macroContext->collectHeap(nullptr, true, false);   // validate?
+            return true;
+        });
+    }
+
     void Module::ClearSharedModules() {
         vector<Module *> kmp;
         Module::foreach([&](Module * mod){
@@ -237,7 +244,6 @@ namespace das {
         for ( auto km : kmp ) {
             delete km;
         }
-        clearGlobalAotLibrary();
     }
 
     bool Module::addAlias ( const TypeDeclPtr & at, bool canFail ) {
@@ -345,6 +351,9 @@ namespace das {
         fn->module = this;
         auto mangledName = fn->getMangledName();
         fn->module = nullptr;
+        if ( fn->builtIn && fn->arguments.size()>DAS_MAX_FUNCTION_ARGUMENTS ) {
+            DAS_FATAL_ERROR("can't add function %s to module %s, too many arguments, DAS_MAX_FUNCTION_ARGUMENTS=%i\n", mangledName.c_str(), name.c_str(), DAS_MAX_FUNCTION_ARGUMENTS );
+        }
         if ( fn->builtIn && fn->sideEffectFlags==uint32_t(SideEffects::none) && fn->result->isVoid() ) {
             DAS_FATAL_ERROR("can't add function %s to module %s; it has no side effects and no return type\n", mangledName.c_str(), name.c_str() );
         }
@@ -477,6 +486,7 @@ namespace das {
                     addAnnotation(fna);
                 });
             }
+            simulateMacros.insert(simulateMacros.end(), ptm->simulateMacros.begin(), ptm->simulateMacros.end());
             captureMacros.insert(captureMacros.end(), ptm->captureMacros.begin(), ptm->captureMacros.end());
             forLoopMacros.insert(forLoopMacros.end(), ptm->forLoopMacros.begin(), ptm->forLoopMacros.end());
             variantMacros.insert(variantMacros.end(), ptm->variantMacros.begin(), ptm->variantMacros.end());
@@ -849,6 +859,13 @@ namespace das {
         reset();
     }
 
+    void ModuleGroup::collectMacroContexts() {
+        foreach([&](Module * pm) -> bool {
+            if ( pm->macroContext ) pm->macroContext->collectHeap(nullptr, true, false);   // validate?
+            return true;
+        }, "*");
+    }
+
     ModuleGroupUserData * ModuleGroup::getUserData ( const string & dataName ) const {
         auto it = userData.find(dataName);
         return it != userData.end() ? it->second.get() : nullptr;
@@ -866,6 +883,27 @@ namespace das {
     bool Module::isVisibleDirectly ( Module * objModule ) const {
         if ( objModule==this ) return true;
         return requireModule.find(objModule) != requireModule.end();
+    }
+
+    using ModulesPullers = das::vector<module_pull_t>;
+
+    static ModulesPullers &get_pullers()
+    {
+        static ModulesPullers pullers;
+        return pullers;
+    }
+
+    ModulePullHelper::ModulePullHelper(module_pull_t pull)
+    {
+        get_pullers().push_back(pull);
+    }
+
+    void pull_all_auto_registered_modules()
+    {
+        for (module_pull_t pull : get_pullers())
+        {
+            das::ModuleKarma += unsigned(intptr_t(pull()));
+        }
     }
 }
 

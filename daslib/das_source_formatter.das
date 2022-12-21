@@ -532,8 +532,8 @@ def fmt_function_arguments(var ctx: FormatterCtx)
 
                 elif ctx.tokens[i].newLines > 0
                     lastNewLineToken = i
-                    ctx.tokens[i].spaces = firstBracketColumn
-                    ctx.tokens[i].column = firstBracketColumn
+                    ctx.tokens[i].spaces = firstBracketColumn + (ctx.tokens[i].isInType ? 2 : 0)
+                    ctx.tokens[i].column = firstBracketColumn + (ctx.tokens[i].isInType ? 2 : 0)
 
                 i++
         i++
@@ -620,7 +620,7 @@ def remove_space_before(var ctx: FormatterCtx; i)
 
 
 let tokens_before_unary <- [[auto "("; "["; "?["; "\{"; "auto"; "int"; "float"; "int16"; "int32"; "int8"; ";"; ",";
-    "if"; "while"; "switch"; "return"; "yield"; "in"; "="; "!"
+    "if"; "elif"; "while"; "switch"; "return"; "yield"; "in"; "="; "!"
     ]]
 
 def is_unary(ctx: FormatterCtx; index: int): bool
@@ -706,13 +706,17 @@ def fmt_spaces_around_operators(var ctx: FormatterCtx)
                 ctx |> make_spaces_around(i)
 
 
-let space_after_keywords <- [[auto "if"; "elif"; "while"; "switch"; "with"; "return";
+let space_after_keywords <- [[auto "if"; "elif"; "while"; "switch"; "with";
         "yield"; "catch"; "static_if"; "static_elif"; "for"
     ]]
 
 def fmt_space_after_keyword(var ctx: FormatterCtx)
     for i in range(1, length(ctx.tokens) - 1)
         if space_after_keywords |> find_index(ctx.tokens[i].str) >= 0
+            if !new_line_before(ctx, i + 1)
+                ctx |> add_space_before(i + 1)
+        // add space only after `return <expr>` expression
+        if ctx.tokens[i].str == "return" && length(ctx.tokens[i+1].str) > 0
             if !new_line_before(ctx, i + 1)
                 ctx |> add_space_before(i + 1)
 

@@ -93,7 +93,10 @@ namespace das {
             fni->fields[i] = makeVariableDebugInfo(*fn.arguments[i]);
         }
         fni->flags = 0;
-        if ( fn.init || fn.macroInit ) fni->flags |= FuncInfo::flag_init;
+        if ( fn.init || fn.macroInit ) {
+            fni->flags |= FuncInfo::flag_init;
+            if ( fn.lateInit ) fni->flags |= FuncInfo::flag_late_init;
+        }
         if ( fn.shutdown ) fni->flags |= FuncInfo::flag_shutdown;
         if ( fn.builtIn ) fni->flags |= FuncInfo::flag_builtin;
         if ( fn.privateFunction ) fni->flags |= FuncInfo::flag_private;
@@ -250,7 +253,7 @@ namespace das {
         if ( type->baseType==Type::tVariant || type->baseType==Type::tBitfield ) {
             info->argCount = uint32_t(type->argNames.size());
             if ( info->argCount ) {
-                info->argNames = (char **) debugInfo->allocate(sizeof(char *) * info->argCount );
+                info->argNames = (const char **) debugInfo->allocate(sizeof(char *) * info->argCount );
                 for ( uint32_t i=0; i!=info->argCount; ++i ) {
                     info->argNames[i] = debugInfo->allocateCachedName(type->argNames[i]);
                 }

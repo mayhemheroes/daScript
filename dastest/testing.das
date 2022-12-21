@@ -4,6 +4,7 @@ module testing shared
 
 require rtti
 require strings // to compare strings/das_strings
+require daslib/math_bits
 
 class T
     name: string
@@ -75,6 +76,9 @@ def equal(t: T?; a; b; msg = ""): bool
     t->errorAt("\tgot: {b}", get_line_info(1))
     return false
 
+[sideeffects]
+def accept(t: T?; value)
+    pass
 
 def strictEqual(t: T?; a; b; msg = ""): bool
     if a == b
@@ -84,6 +88,46 @@ def strictEqual(t: T?; a; b; msg = ""): bool
     t->fatalAt("\tgot: {b}", get_line_info(1))
     return false
 
+def strictEqual(t: T?; a,b:float; msg = ""): bool
+    if float_bits_to_int(a) == float_bits_to_int(b)
+        return true
+    t->errorAt(!empty(msg) ? msg : "values differ", get_line_info(1))
+    t->errorAt("\texpected: {a}", get_line_info(1))
+    t->fatalAt("\tgot: {b}", get_line_info(1))
+    return false
+
+def strictEqual(t: T?; a,b:float2; msg = ""): bool
+    if float_bits_to_int(a) == float_bits_to_int(b)
+        return true
+    t->errorAt(!empty(msg) ? msg : "values differ", get_line_info(1))
+    t->errorAt("\texpected: {a}", get_line_info(1))
+    t->fatalAt("\tgot: {b}", get_line_info(1))
+    return false
+
+def strictEqual(t: T?; a,b:float3; msg = ""): bool
+    if float_bits_to_int(a) == float_bits_to_int(b)
+        return true
+    t->errorAt(!empty(msg) ? msg : "values differ", get_line_info(1))
+    t->errorAt("\texpected: {a}", get_line_info(1))
+    t->fatalAt("\tgot: {b}", get_line_info(1))
+    return false
+
+def strictEqual(t: T?; a,b:float4; msg = ""): bool
+    if float_bits_to_int(a) == float_bits_to_int(b)
+        return true
+    t->errorAt(!empty(msg) ? msg : "values differ", get_line_info(1))
+    t->errorAt("\texpected: {a}", get_line_info(1))
+    t->fatalAt("\tgot: {b}", get_line_info(1))
+    return false
+
+
+def strictEqual(t: T?; a,b:double; msg = ""): bool
+    if double_bits_to_int64(a) == double_bits_to_int64(b)
+        return true
+    t->errorAt(!empty(msg) ? msg : "values differ", get_line_info(1))
+    t->errorAt("\texpected: {a}", get_line_info(1))
+    t->fatalAt("\tgot: {b}", get_line_info(1))
+    return false
 
 def success(t: T?; a; msg = ""): bool
     if a

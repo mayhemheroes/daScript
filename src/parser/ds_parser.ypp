@@ -128,7 +128,7 @@
 %destructor { delete $$; } <fa>
 %destructor { delete $$; } <faList>
 %destructor { delete $$; } <pMakeStruct>
-%destructor { delete $$; } <pEnum>
+%destructor { if ( $$->use_count()==1 ) delete $$; } <pEnum>
 %destructor { delete $$; } <pCapt>
 %destructor { delete $$; } <pCaptList>
 %destructor { delete $$.firstType; $$.secondType; } <aTypePair>
@@ -307,7 +307,7 @@
 %token      END_STRING_EXPR         "}"
 %token      END_OF_READ             "end of failed eader macro"
 
-%type <s>               enum_name
+%type <pEnum>           enum_name
 %type <pNameList>       bitfield_bits
 %type <pNameWithPosList>variable_name_with_pos_list
 %type <pNameWithPosList>let_variable_name_with_pos_list
@@ -391,9 +391,13 @@
 %type <pExpression>     expression_continue
 %type <pExpression>     expression_delete
 %type <pExpression>     expression_return
+%type <pExpression>     expression_return_no_pipe
 %type <pExpression>     expression_yield
+%type <pExpression>     expression_yield_no_pipe
 %type <pExpression>     expression_else
 %type <pExpression>     expression_if_then_else
+%type <pExpression>     expression_if_one_liner
+%type <pExpression>     expression_else_one_liner
 %type <pExpression>     expression_try_catch
 %type <pExpression>     expr_new
 %type <pExpression>     expr_pipe
@@ -423,6 +427,7 @@
 %type <pExpression>     expr_method_call
 %type <pExpression>     block_or_simple_block
 %type <pExpression>     func_addr_expr
+%type <pExpression>     func_addr_name
 
 %type <pExpression>     optional_block
 
@@ -717,12 +722,30 @@ if_or_static_if
     |   DAS_STATIC_IF   { $$ = true; }
     ;
 
+expression_else_one_liner
+    :   { $$ = nullptr; }
+    |   DAS_ELSE[loc] { yyextra->das_need_oxford_comma = true; } expression_if_one_liner[result] {
+            $$ = $result;
+    }
+    ;
+
+expression_if_one_liner
+    :   expr[result]                        { $$ = $result; }
+    |   expression_return_no_pipe[result]   { $$ = $result; }
+    |   expression_yield_no_pipe[result]    { $$ = $result; }
+    |   expression_break[result]            { $$ = $result; }
+    |   expression_continue[result]         { $$ = $result; }
+    ;
+
 expression_if_then_else
     :   if_or_static_if[loc] expr[cond] expression_block[block] expression_else[then] {
         auto eite = new ExprIfThenElse(tokAt(scanner,@loc),ExpressionPtr($cond),
             ExpressionPtr($block),ExpressionPtr($then));
         eite->isStatic = $loc;
         $$ = eite;
+    }
+    |   expression_if_one_liner[if_true] DAS_IF[loc] { yyextra->das_need_oxford_comma = true; } expr[cond] expression_else_one_liner[if_false] ';' {
+        $$ = new ExprIfThenElse(tokAt(scanner,@loc),ExpressionPtr($cond),ExpressionPtr(ast_wrapInBlock($if_true)),$if_false ? ExpressionPtr(ast_wrapInBlock($if_false)) : nullptr);
     }
     ;
 
@@ -933,6 +956,30 @@ function_name
     |   DAS_OPERATOR DAS_IS { $$ = new string("`is"); }
     |   DAS_OPERATOR DAS_AS { $$ = new string("`as"); }
     |   DAS_OPERATOR '?' DAS_AS { $$ = new string("?as"); }
+    |   DAS_TBOOL    { $$ = new string("bool"); }
+    |   DAS_TSTRING  { $$ = new string("string"); }
+    |   DAS_TINT     { $$ = new string("int"); }
+    |   DAS_TINT2    { $$ = new string("int2"); }
+    |   DAS_TINT3    { $$ = new string("int3"); }
+    |   DAS_TINT4    { $$ = new string("int4"); }
+    |   DAS_TUINT    { $$ = new string("uint"); }
+    |   DAS_TUINT2   { $$ = new string("uint2"); }
+    |   DAS_TUINT3   { $$ = new string("uint3"); }
+    |   DAS_TUINT4   { $$ = new string("uint4"); }
+    |   DAS_TFLOAT   { $$ = new string("float"); }
+    |   DAS_TFLOAT2  { $$ = new string("float2"); }
+    |   DAS_TFLOAT3  { $$ = new string("float3"); }
+    |   DAS_TFLOAT4  { $$ = new string("float4"); }
+    |   DAS_TRANGE   { $$ = new string("range"); }
+    |   DAS_TURANGE  { $$ = new string("urange"); }
+    |   DAS_TINT64   { $$ = new string("int64"); }
+    |   DAS_TUINT64  { $$ = new string("uint64"); }
+    |   DAS_TDOUBLE  { $$ = new string("double"); }
+    |   DAS_TINT8    { $$ = new string("int8"); }
+    |   DAS_TUINT8   { $$ = new string("uint8"); }
+    |   DAS_TINT16   { $$ = new string("int16"); }
+    |   DAS_TUINT16  { $$ = new string("uint16"); }
+
     ;
 
 global_function_declaration
@@ -1104,6 +1151,11 @@ expression_delete
     :   DAS_DELETE[loc] expr[subexpr] {
         $$ = new ExprDelete(tokAt(scanner,@loc), ExpressionPtr($subexpr));
     }
+    |   DAS_DELETE[loc] DAS_EXPLICIT expr[subexpr] {
+        auto delExpr = new ExprDelete(tokAt(scanner,@loc), ExpressionPtr($subexpr));
+        delExpr->native = true;
+        $$ = delExpr;
+    }
     ;
 
 expr_new
@@ -1130,17 +1182,23 @@ expression_continue
     :   DAS_CONTINUE[loc] { $$ = new ExprContinue(tokAt(scanner,@loc)); }
     ;
 
-expression_return
-    :   DAS_RETURN[loc] ';' {
+expression_return_no_pipe
+    :   DAS_RETURN[loc] {
         $$ = new ExprReturn(tokAt(scanner,@loc),nullptr);
     }
-    |   DAS_RETURN[loc] expr[subexpr] ';' {
+    |   DAS_RETURN[loc] expr[subexpr] {
         $$ = new ExprReturn(tokAt(scanner,@loc),ExpressionPtr($subexpr));
     }
-    |   DAS_RETURN[loc] LARROW expr[subexpr] ';' {
+    |   DAS_RETURN[loc] LARROW expr[subexpr] {
         auto pRet = new ExprReturn(tokAt(scanner,@loc),ExpressionPtr($subexpr));
         pRet->moveSemantics = true;
         $$ = pRet;
+    }
+    ;
+
+expression_return
+    :   expression_return_no_pipe[result] ';' {
+        $$ = $result;
     }
     |   DAS_RETURN[loc] expr_pipe[subexpr] {
         $$ = new ExprReturn(tokAt(scanner,@loc),ExpressionPtr($subexpr));
@@ -1152,14 +1210,20 @@ expression_return
     }
     ;
 
-expression_yield
-    :   DAS_YIELD[loc] expr[subexpr] ';' {
+expression_yield_no_pipe
+    :   DAS_YIELD[loc] expr[subexpr] {
         $$ = new ExprYield(tokAt(scanner,@loc),ExpressionPtr($subexpr));
     }
-    |   DAS_YIELD[loc] LARROW expr[subexpr] ';' {
+    |   DAS_YIELD[loc] LARROW expr[subexpr] {
         auto pRet = new ExprYield(tokAt(scanner,@loc),ExpressionPtr($subexpr));
         pRet->moveSemantics = true;
         $$ = pRet;
+    }
+    ;
+
+expression_yield
+    :   expression_yield_no_pipe[result] ';' {
+        $$ = $result;
     }
     |   DAS_YIELD[loc] expr_pipe[subexpr] {
         $$ = new ExprYield(tokAt(scanner,@loc),ExpressionPtr($subexpr));
@@ -1381,28 +1445,35 @@ expr_method_call
     }
     ;
 
+func_addr_name
+    :   name_in_namespace[name]     {
+        $$ = new ExprAddr(tokAt(scanner,@name),*$name);
+        delete $name;
+    }
+    |   MTAG_I[loc] '(' expr[subexpr] ')' {
+        auto expr = new ExprAddr(tokAt(scanner,@loc),"``MACRO``TAG``ADDR``");
+        $$ = new ExprTag(tokAt(scanner,@subexpr),$subexpr, expr, "i");
+    }
+    ;
+
 func_addr_expr
-    :   '@' '@'[loc] name_in_namespace[name]     {
-        $$ = new ExprAddr(tokAt(scanner,@loc),*$name);
-        delete $name;
+    :   '@' '@' func_addr_name[faddr]     {
+        $$ = $faddr;
     }
-    |   '@' '@'[loc] '<' { yyextra->das_arrow_depth ++; } type_declaration[blockType] '>' { yyextra->das_arrow_depth --; } name_in_namespace[name] {
-        auto expr = new ExprAddr(tokAt(scanner,@loc),*$name);
-        delete $name;
-        expr->funcType = make_smart<TypeDecl>(Type::tFunction);
-        expr->funcType->firstType = TypeDeclPtr($blockType);
-        $$ = expr;
+    |   '@' '@' '<' { yyextra->das_arrow_depth ++; } type_declaration[blockType] '>' { yyextra->das_arrow_depth --; } func_addr_name[faddr] {
+        auto expr = (ExprAddr *) ($faddr->rtti_isAddr() ? $faddr : (((ExprTag *) $faddr)->value.get()));
+        expr->funcType = TypeDeclPtr($blockType);
+        $$ = $faddr;
     }
-    |   '@' '@'[loc] '<' { yyextra->das_arrow_depth ++; } optional_function_argument_list[list] optional_function_type[result] '>' { yyextra->das_arrow_depth --; } name_in_namespace[name] {
-        auto expr = new ExprAddr(tokAt(scanner,@loc),*$name);
-        delete $name;
+    |   '@' '@' '<' { yyextra->das_arrow_depth ++; } optional_function_argument_list[list] optional_function_type[result] '>' { yyextra->das_arrow_depth --; } func_addr_name[faddr] {
+        auto expr = (ExprAddr *) ($faddr->rtti_isAddr() ? $faddr : (((ExprTag *) $faddr)->value.get()));
         expr->funcType = make_smart<TypeDecl>(Type::tFunction);
         expr->funcType->firstType = TypeDeclPtr($result);
         if ( $list ) {
             varDeclToTypeDecl(scanner, expr->funcType.get(), $list);
             deleteVariableDeclarationList($list);
         }
-        $$ = expr;
+        $$ = $faddr;
     }
     ;
 
@@ -1993,24 +2064,24 @@ enum_name
             auto pubename = tokAt(scanner,@name);
             for ( auto & crd : yyextra->g_CommentReaders ) crd->beforeEnumeration(pubename);
         }
-        $$ = $name;
+        $$ = ast_addEmptyEnum(scanner, $name, tokAt(scanner,@name));
     }
     ;
 
 enum_declaration
-    :   optional_annotation_list[annL] DAS_ENUM[loc] optional_public_or_private_enum[pubE] enum_name[name] '{' enum_list[pE] '}' {
+    :   optional_annotation_list[annL] DAS_ENUM[loc] optional_public_or_private_enum[pubE] enum_name[edecl] '{' enum_list[pE] '}' {
         if ( !yyextra->g_CommentReaders.empty() ) {
             auto pubename = tokAt(scanner,@pE);
-            for ( auto & crd : yyextra->g_CommentReaders ) crd->afterEnumeration($name->c_str(),pubename);
+            for ( auto & crd : yyextra->g_CommentReaders ) crd->afterEnumeration($edecl->name.c_str(),pubename);
         }
-        ast_enumDeclaration(scanner,$annL,tokAt(scanner,@annL),$pubE,$name,tokAt(scanner,@name),$pE,tokAt(scanner,@pE),Type::tInt);
+        ast_enumDeclaration(scanner,$annL,tokAt(scanner,@annL),$pubE,$edecl,$pE,Type::tInt);
     }
-    |   optional_annotation_list[annL] DAS_ENUM[loc] optional_public_or_private_enum[pubE] enum_name[name] ':' enum_basic_type_declaration[ebt] '{' enum_list[pE] '}' {
+    |   optional_annotation_list[annL] DAS_ENUM[loc] optional_public_or_private_enum[pubE] enum_name[edecl] ':' enum_basic_type_declaration[ebt] '{' enum_list[pE] '}' {
         if ( !yyextra->g_CommentReaders.empty() ) {
             auto pubename = tokAt(scanner,@pE);
-            for ( auto & crd : yyextra->g_CommentReaders ) crd->afterEnumeration($name->c_str(),pubename);
+            for ( auto & crd : yyextra->g_CommentReaders ) crd->afterEnumeration($edecl->name.c_str(),pubename);
         }
-        ast_enumDeclaration(scanner,$annL,tokAt(scanner,@annL),$pubE,$name,tokAt(scanner,@name),$pE,tokAt(scanner,@pE),$ebt);
+        ast_enumDeclaration(scanner,$annL,tokAt(scanner,@annL),$pubE,$edecl,$pE,$ebt);
     }
     ;
 
@@ -2063,6 +2134,11 @@ variable_name_with_pos_list
         pSL->push_back(VariableNameAndPosition{*$name,"",tokAt(scanner,@name)});
         $$ = pSL;
         delete $name;
+    }
+    |   MTAG_I '(' expr[subexpr] ')' {
+        auto pSL = new vector<VariableNameAndPosition>();
+        pSL->push_back(VariableNameAndPosition{"``MACRO``TAG``","",tokAt(scanner,@subexpr),$subexpr});
+        $$ = pSL;
     }
     |   NAME[name] DAS_AKA NAME[akaname] {
         das_checkName(scanner,*$name,tokAt(scanner,@name));

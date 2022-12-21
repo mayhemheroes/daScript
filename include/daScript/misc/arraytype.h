@@ -11,6 +11,7 @@ namespace das
         uint32_t    argumentsOffset;
         SimNode *   body;
         void *      aotFunction;
+        void *      jitFunction;
         vec4f *     functionArguments;
         FuncInfo *  info;
         __forceinline bool operator == ( const Block & b ) const {
@@ -18,6 +19,10 @@ namespace das
                 && b.body==body && b.functionArguments==functionArguments;
         }
     };
+
+    class Context;
+
+    typedef vec4f ( * JitBlockFunction ) ( Context * , vec4f *, void *, Block * );
 
     template <typename Result, typename ...Args>
     struct TBlock : Block {
@@ -94,7 +99,8 @@ namespace das
         union {
             struct {
                 bool    shared : 1;
-                bool    hopeless : 1;   // needs to be deleted without fuss (exceptions)
+                bool    hopeless : 1;           // needs to be deleted without fuss (exceptions)
+                bool    forego_lock_check : 1;  // don't need to check if elements are locked
             };
             uint32_t    flags;
         };

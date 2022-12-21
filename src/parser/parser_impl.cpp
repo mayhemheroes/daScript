@@ -106,7 +106,8 @@ namespace das {
 
     void runFunctionAnnotations ( yyscan_t scanner, Function * func, AnnotationList * annL, const LineInfo & at ) {
         if ( annL ) {
-            for ( const auto & pA : *annL ) {
+            for ( auto itA = annL->begin(); itA!=annL->end();  ) {
+                auto pA = *itA;
                 if ( pA->annotation ) {
                     if ( pA->annotation->rtti_isFunctionAnnotation() ) {
                         auto ann = static_pointer_cast<FunctionAnnotation>(pA->annotation);
@@ -115,10 +116,14 @@ namespace das {
                             das_yyerror(scanner,"macro [" +pA->annotation->name + "] failed to apply to a function " + func->name + "\n" + err, at,
                                 CompilationError::invalid_annotation);
                         }
+                        itA ++;
                     } else {
-                        das_yyerror(scanner,"functions are only allowed function macros",
+                        das_yyerror(scanner, pA->getMangledName() + " is not a function macro, functions are only allowed function macros",
                             at, CompilationError::invalid_annotation);
+                        itA = annL->erase(itA);
                     }
+                } else {
+                    itA = annL->erase(itA);
                 }
             }
             swap ( func->annotations, *annL );
@@ -141,6 +146,7 @@ namespace das {
                     CompilationError::invalid_aka);
             }
             pFor->iteratorsAt.push_back(np.at);
+            pFor->iteratorsTags.push_back(np.tag);
         }
         delete iters;
         pFor->sources = sequenceToList(srcs);
@@ -292,6 +298,9 @@ namespace das {
                     }
                 }
                 swap ( pStruct->annotations, *annL );
+                for ( const auto & pA : *annL ) {
+                    pStruct->annotations.push_back(pA);
+                }
                 delete annL;
             }
         }
@@ -299,14 +308,24 @@ namespace das {
         yyextra->g_thisStructure = nullptr;
     }
 
-    void ast_enumDeclaration (  yyscan_t scanner, AnnotationList * annL, const LineInfo & atannL, bool pubE,
-        string * name, const LineInfo & atName, Enumeration * pE, const LineInfo & atpE, Type ebt ) {
+    Enumeration * ast_addEmptyEnum ( yyscan_t scanner, string * name, const LineInfo & atName ) {
         das_checkName(scanner,*name,atName);
-        auto pEnum = EnumerationPtr(pE);
+        auto pEnum = make_smart<Enumeration>(*name);
+        delete name;
         pEnum->at = atName;
-        pEnum->name = *name;
+        if ( !yyextra->g_Program->addEnumeration(pEnum) ) {
+            das_yyerror(scanner,"enumeration is already defined "+pEnum->name, atName,
+                CompilationError::enumeration_already_declared);
+            return pEnum.orphan();
+        } else {
+            return pEnum.get();
+        }
+    }
+
+    void ast_enumDeclaration (  yyscan_t scanner, AnnotationList * annL, const LineInfo & atannL, bool pubE, Enumeration * pEnum, Enumeration * pE, Type ebt ) {
         pEnum->baseType = ebt;
         pEnum->isPrivate = !pubE;
+        pEnum->list = move(pE->list);
         if ( annL ) {
             for ( auto pA : *annL ) {
                 if ( pA->annotation ) {
@@ -323,13 +342,8 @@ namespace das {
             swap ( pEnum->annotations, *annL );
             delete annL;
         }
-        if ( !yyextra->g_Program->addEnumeration(pEnum) ) {
-            das_yyerror(scanner,"enumeration is already defined "+*name, atpE,
-                CompilationError::enumeration_already_declared);
-        }
-        delete name;
+        delete pE;
     }
-
 
     void ast_globalLetList (  yyscan_t scanner, bool kwd_let, bool glob_shar, bool pub_var, vector<VariableDeclaration*> * list ) {
         for ( auto pDecl : *list ) {
@@ -555,14 +569,8 @@ namespace das {
             }
         }
         if ( pEnum ) {
-            auto ff = pEnum->find(*eni);
-            if ( ff.second ) {
-                auto td = make_smart<TypeDecl>(pEnum);
-                resConst = new ExprConstEnumeration(eniAt, *eni, td);
-            } else {
-                das_yyerror(scanner,"enumeraiton value not found " + *ena + " " + *eni, eniAt,
-                    CompilationError::enumeration_not_found);
-            }
+            auto td = make_smart<TypeDecl>(pEnum);
+            resConst = new ExprConstEnumeration(eniAt, *eni, td);
         }
         delete ena;
         delete eni;
@@ -596,6 +604,10 @@ namespace das {
                             }
                             if ( pDecl->annotation ) {
                                 pVar->annotation = *pDecl->annotation;
+                            }
+                            if ( auto pTagExpr = name_at.tag ) {
+                                pVar->tag = true;
+                                pVar->source = pTagExpr;
                             }
                             closure->arguments.push_back(pVar);
                         } else {
@@ -750,6 +762,7 @@ namespace das {
             pFor->iterators.push_back(np.name);
             pFor->iteratorsAka.push_back(np.aka);
             pFor->iteratorsAt.push_back(np.at);
+            pFor->iteratorsTags.push_back(np.tag);
         }
         delete iters;
         pFor->sources = sequenceToList(srcs);
@@ -815,5 +828,12 @@ namespace das {
             delete clist;
         }
         return gen;
+    }
+
+    ExprBlock * ast_wrapInBlock ( Expression * expr ) {
+        auto block = new ExprBlock();
+        block->at = expr->at;
+        block->list.push_back(ExpressionPtr(expr));
+        return block;
     }
  }

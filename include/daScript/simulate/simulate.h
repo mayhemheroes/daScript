@@ -51,6 +51,8 @@ namespace das
     ,   opengl =            (1<<4)
     ,   debugger_tick =     (1<<5)
     ,   debugger_attached = (1<<6)
+    ,   macro_context     = (1<<7)
+    ,   folding_context =   (1<<8)
     };
 
     struct GlobalVariable {
@@ -83,14 +85,17 @@ namespace das
                 bool    fastcall : 1;
                 bool    builtin : 1;
                 bool    jit : 1;
+                bool    unsafe : 1;
+                bool    cmres : 1;
             };
         };
+        const LineInfo * getLineInfo() const;
     };
 
     struct SimNode {
         SimNode ( const LineInfo & at ) : debugInfo(at) {}
         virtual SimNode * copyNode ( Context & context, NodeAllocator * code );
-        virtual vec4f eval ( Context & ) = 0;
+        virtual vec4f DAS_EVAL_ABI eval ( Context & ) = 0;
         virtual SimNode * visit ( SimVisitor & vis );
         virtual char *      evalPtr ( Context & context );
         virtual bool        evalBool ( Context & context );
@@ -212,8 +217,9 @@ namespace das
         virtual void onBreakpoint ( Context *, const LineInfo &, const char *, const char * ) {}
         virtual void onVariable ( Context *, const char *, const char *, TypeInfo *, void * ) {}
         virtual void onTick () {}
-        virtual void onCollect ( Context * ) {}
+        virtual void onCollect ( Context *, const LineInfo & ) {}
         virtual bool onLog ( int /*level*/, const char * /*text*/ ) { return false; }
+        virtual void onBreakpointsReset ( const char * /*file*/, int /*breakpointsNum*/ ) {}
         virtual bool isCppOnlyAgent() const { return false; }
     };
     typedef smart_ptr<DebugAgent> DebugAgentPtr;
@@ -318,7 +324,7 @@ namespace das
             return insideContext --;
         }
 
-        __forceinline vec4f eval ( const SimFunction * fnPtr, vec4f * args = nullptr, void * res = nullptr ) {
+        __forceinline vec4f DAS_EVAL_ABI eval ( const SimFunction * fnPtr, vec4f * args = nullptr, void * res = nullptr ) {
             return callWithCopyOnReturn(fnPtr, args, res, 0);
         }
 
@@ -330,8 +336,8 @@ namespace das
             unlock();
         }
 
-        vec4f evalWithCatch ( SimFunction * fnPtr, vec4f * args = nullptr, void * res = nullptr );
-        vec4f evalWithCatch ( SimNode * node );
+        vec4f DAS_EVAL_ABI evalWithCatch ( SimFunction * fnPtr, vec4f * args = nullptr, void * res = nullptr );
+        vec4f DAS_EVAL_ABI evalWithCatch ( SimNode * node );
         bool  runWithCatch ( const callable<void()> & subexpr );
 
         DAS_NORETURN_PREFIX void throw_error ( const char * message ) DAS_NORETURN_SUFFIX;
@@ -395,7 +401,7 @@ namespace das
             return (char *) abiCMRES;
         }
 
-        __forceinline vec4f call(const SimFunction * fn, vec4f * args, LineInfo * line) {
+        __forceinline vec4f DAS_EVAL_ABI call(const SimFunction * fn, vec4f * args, LineInfo * line) {
             // PUSH
             char * EP, *SP;
             if (!stack.push(fn->stackSize, EP, SP)) {
@@ -428,7 +434,7 @@ namespace das
             return result;
         }
 
-        __forceinline vec4f callOrFastcall(const SimFunction * fn, vec4f * args, LineInfo * line) {
+        __forceinline vec4f DAS_EVAL_ABI callOrFastcall(const SimFunction * fn, vec4f * args, LineInfo * line) {
             if ( fn->fastcall ) {
                 auto aa = abiArg;
                 abiArg = args;
@@ -469,7 +475,7 @@ namespace das
             }
         }
 
-        __forceinline vec4f callWithCopyOnReturn(const SimFunction * fn, vec4f * args, void * cmres, LineInfo * line) {
+        __forceinline vec4f DAS_EVAL_ABI callWithCopyOnReturn(const SimFunction * fn, vec4f * args, void * cmres, LineInfo * line) {
             // PUSH
             char * EP, *SP;
             if (!stack.push(fn->stackSize, EP, SP)) {
@@ -507,7 +513,7 @@ namespace das
 #pragma warning(disable:4324)
 #endif
 
-        __forceinline vec4f invoke(const Block &block, vec4f * args, void * cmres, LineInfo * line ) {
+        __forceinline vec4f DAS_EVAL_ABI invoke(const Block &block, vec4f * args, void * cmres, LineInfo * line ) {
             char * EP, *SP;
             vec4f * TBA = nullptr;
             char * STB = stack.bottom();
@@ -554,10 +560,10 @@ namespace das
 #endif
 
         template <typename Fn>
-        vec4f invokeEx(const Block &block, vec4f * args, void * cmres, Fn && when, LineInfo * line);
+        vec4f DAS_EVAL_ABI invokeEx(const Block &block, vec4f * args, void * cmres, Fn && when, LineInfo * line);
 
         template <typename Fn>
-        vec4f callEx(const SimFunction * fn, vec4f *args, void * cmres, LineInfo * line, Fn && when) {
+        vec4f DAS_EVAL_ABI callEx(const SimFunction * fn, vec4f *args, void * cmres, LineInfo * line, Fn && when) {
             // PUSH
             char * EP, *SP;
             if(!stack.push(fn->stackSize,EP,SP)) {
@@ -594,6 +600,7 @@ namespace das
         }
 
         void relocateCode( bool pwh = false );
+        void announceCreation();
         void collectStringHeap(LineInfo * at, bool validate);
         void collectHeap(LineInfo * at, bool stringHeap, bool validate);
         void reportAnyHeap(LineInfo * at, bool sth, bool rgh, bool rghOnly, bool errorsOnly);
@@ -616,13 +623,17 @@ namespace das
         void instrumentFunctionCallback ( SimFunction * sim, bool entering, uint64_t userData );
         void instrumentCallback ( const LineInfo & at );
 
+        uint64_t getCodeAllocatorId() { return (uint64_t) code.get(); }
+
 #define DAS_SINGLE_STEP(context,at,forceStep) \
     context.singleStep(at,forceStep);
 
         __forceinline void singleStep ( const LineInfo & at, bool forceStep ) {
             if ( singleStepMode ) {
                 if ( hwBpIndex!=-1 ) {
-                    breakPoint(at, "exception","hardware breakpoint");
+                    char reason[128];
+                    snprintf(reason, sizeof(reason), "hardware breakpoint 0x%p", hwBpAddress);
+                    breakPoint(at, "exception",reason);
                     hwBpIndex = -1;
                 } else if ( forceStep || singleStepAt==nullptr || (singleStepAt->fileInfo!=at.fileInfo || singleStepAt->line!=at.line) ) {
                     singleStepAt = &at;
@@ -678,6 +689,10 @@ namespace das
         int totalVariables = 0;
         int totalFunctions = 0;
         SimNode * aotInitScript = nullptr;
+        SimFunction ** initFunctions = nullptr;
+        int totalInitFunctions = 0;
+    public:
+        bool skipLockChecks = false;
     protected:
         bool            debugger = false;
         volatile bool   singleStepMode = false;
@@ -704,7 +719,8 @@ namespace das
     };
 
     void tickDebugAgent ( );
-    void collectDebugAgentState ( Context & ctx );
+    void collectDebugAgentState ( Context & ctx, const LineInfo & at );
+    void onBreakpointsReset ( const char * file, int breakpointsNum );
     void tickSpecificDebugAgent ( const char * name );
     void installDebugAgent ( DebugAgentPtr newAgent, const char * category, LineInfoArg * at, Context * context );
     void shutdownDebugAgent();
@@ -789,7 +805,7 @@ __forceinline void profileNode ( SimNode * node ) {
     EVAL_NODE(Bool,bool);
 
 #define DAS_NODE(TYPE,CTYPE)                                         \
-    virtual vec4f eval ( das::Context & context ) override {         \
+    virtual vec4f DAS_EVAL_ABI eval ( das::Context & context ) override {         \
         return das::cast<CTYPE>::from(compute(context));             \
     }                                                                \
     virtual CTYPE eval##TYPE ( das::Context & context ) override {   \
@@ -897,7 +913,7 @@ __forceinline void profileNode ( SimNode * node ) {
         void visitBlock ( SimVisitor & vis );
         void visitLabels ( SimVisitor & vis );
         virtual SimNode * visit ( SimVisitor & vis ) override;
-        virtual vec4f eval ( Context & context ) override;
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override;
         SimNode ** list = nullptr;
         uint32_t total = 0;
         uint64_t annotationDataSid = 0;
@@ -907,28 +923,28 @@ __forceinline void profileNode ( SimNode * node ) {
 
     struct SimNodeDebug_Block : SimNode_Block {
         SimNodeDebug_Block ( const LineInfo & at ) : SimNode_Block(at) {}
-        virtual vec4f eval ( Context & context ) override;
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override;
     };
 
     struct SimNode_BlockNF : SimNode_Block {
         SimNode_BlockNF ( const LineInfo & at ) : SimNode_Block(at) {}
-        virtual vec4f eval ( Context & context ) override;
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override;
     };
 
     struct SimNodeDebug_BlockNF : SimNode_BlockNF {
         SimNodeDebug_BlockNF ( const LineInfo & at ) : SimNode_BlockNF(at) {}
-        virtual vec4f eval ( Context & context ) override;
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override;
     };
 
     struct SimNode_BlockWithLabels : SimNode_Block {
         SimNode_BlockWithLabels ( const LineInfo & at ) : SimNode_Block(at) {}
         virtual SimNode * visit ( SimVisitor & vis ) override;
-        virtual vec4f eval ( Context & context ) override;
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override;
     };
 
     struct SimNodeDebug_BlockWithLabels : SimNode_BlockWithLabels {
         SimNodeDebug_BlockWithLabels ( const LineInfo & at ) : SimNode_BlockWithLabels(at) {}
-        virtual vec4f eval ( Context & context ) override;
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override;
     };
 
     struct SimNode_ForBase : SimNode_Block {
@@ -958,7 +974,7 @@ __forceinline void profileNode ( SimNode * node ) {
                 this->code0 = c0;
             }
         virtual SimNode * visit ( SimVisitor & vis ) override;
-        virtual vec4f eval ( Context & context ) override;
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override;
         uint64_t annotationData = 0;
         union {
             uint32_t flags;
@@ -972,7 +988,7 @@ __forceinline void profileNode ( SimNode * node ) {
     struct SimNodeDebug_ClosureBlock : SimNode_ClosureBlock {
         SimNodeDebug_ClosureBlock ( const LineInfo & at, bool nr, bool c0, uint64_t ad )
             : SimNode_ClosureBlock(at,nr,c0,ad) { }
-        virtual vec4f eval ( Context & context ) override;
+        virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override;
     };
 
 #ifdef _MSC_VER
@@ -981,7 +997,7 @@ __forceinline void profileNode ( SimNode * node ) {
 #pragma warning(disable:4324)
 #endif
     template <typename Fn>
-    vec4f Context::invokeEx(const Block &block, vec4f * args, void * cmres, Fn && when, LineInfo * line ) {
+    vec4f DAS_EVAL_ABI Context::invokeEx(const Block &block, vec4f * args, void * cmres, Fn && when, LineInfo * line ) {
         char * EP, *SP;
         vec4f * TBA = nullptr;
         char * STB = stack.bottom();

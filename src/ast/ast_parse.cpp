@@ -295,6 +295,7 @@ namespace das {
         int err;
         auto program = make_smart<Program>();
         daScriptEnvironment::bound->g_Program = program;
+        daScriptEnvironment::bound->g_compilerLog = &logs;
         program->promoteToBuiltin = false;
         program->isCompiling = true;
         program->isDependency = isDep;
@@ -332,6 +333,7 @@ namespace das {
             program->error(fileName + " not found", "","",LineInfo());
             program->isCompiling = false;
             daScriptEnvironment::bound->g_Program.reset();
+            daScriptEnvironment::bound->g_compilerLog = nullptr;
             return program;
         }
         err = das_yyparse(scanner);
@@ -340,6 +342,7 @@ namespace das {
         totParse += get_time_usec(time0);
         if ( err || program->failed() ) {
             daScriptEnvironment::bound->g_Program.reset();
+            daScriptEnvironment::bound->g_compilerLog = nullptr;
             sort(program->errors.begin(),program->errors.end());
             program->isCompiling = false;
             return program;
@@ -349,14 +352,17 @@ namespace das {
             }
             auto timeI = ref_time_ticks();
             restartInfer: program->inferTypes(logs, libGroup);
+            if ( policies.macro_context_collect ) libGroup.collectMacroContexts();
             totInfer += get_time_usec(timeI);
             if ( !program->failed() ) {
+                program->buildAccessFlags(logs);    // this is used by the lint pass
                 if ( program->patchAnnotations() ) {
                     goto restartInfer;
                 }
             }
             if ( !program->failed() ) {
                 program->lint(libGroup);
+                if ( policies.macro_context_collect ) libGroup.collectMacroContexts();
                 program->foldUnsafe();
                 auto timeO = ref_time_ticks();
                 if (program->getOptimize()) {
@@ -364,6 +370,7 @@ namespace das {
                 } else {
                     program->buildAccessFlags(logs);
                 }
+                if ( policies.macro_context_collect ) libGroup.collectMacroContexts();
                 totOpt += get_time_usec(timeO);
                 if (!program->failed())
                     program->verifyAndFoldContracts();
@@ -381,13 +388,14 @@ namespace das {
                     program->allocateStack(logs);
                 if (!program->failed())
                     program->finalizeAnnotations();
+                if ( policies.macro_context_collect ) libGroup.collectMacroContexts();
             }
             if (!program->failed()) {
                 if (program->options.getBoolOption("log")) {
                     logs << *program;
                 }
             }
-            daScriptEnvironment::bound->g_Program.reset();
+            daScriptEnvironment::bound->g_compilerLog = nullptr;
             sort(program->errors.begin(), program->errors.end());
             program->isCompiling = false;
             if ( !program->failed() ) {
@@ -407,11 +415,43 @@ namespace das {
                     totM += get_time_usec(timeM);
                 }
             }
+            daScriptEnvironment::bound->g_Program.reset();
+            if ( policies.macro_context_collect ) libGroup.collectMacroContexts();
             if ( program->options.getBoolOption("log_compile_time",false) ) {
                 auto dt = get_time_usec(time0) / 1000000.;
                 logs << "compiler took " << dt << ", " << fileName << "\n";
             }
             return program;
+        }
+    }
+
+    void addExtraDependency(
+        string modName,
+        string modFile,
+        vector<string> & missing,
+        vector<string> & circular,
+        vector<string> & notAllowed,
+        vector<ModuleInfo> & req,
+        das_set<string> & dependencies,
+        const FileAccessPtr & access,
+        ModuleGroup & libGroup,
+        CodeOfPolicies policies ) {
+        bool hasModule = false;
+        for ( auto & mod : req ) {
+            if ( mod.moduleName==modName) {
+                hasModule = true;
+                break;
+            }
+        }
+        if ( !hasModule && !modFile.empty() ) {
+            getPrerequisits(modFile, access, req, missing, circular, notAllowed,
+                dependencies, libGroup, nullptr, 1, !policies.ignore_shared_modules);
+            auto finfo = access->getFileInfo(modFile);
+            ModuleInfo info;
+            info.fileName = finfo->name;
+            info.importName = "";
+            info.moduleName = modName;
+            req.push_back(info);
         }
     }
 
@@ -432,23 +472,10 @@ namespace das {
                 dependencies, libGroup, nullptr, 1, !policies.ignore_shared_modules) ) {
             preqT = get_time_usec(time0);
             if ( policies.debugger ) {
-                bool hasDebugger = false;
-                for ( auto & mod : req ) {
-                    if ( mod.moduleName=="debug") {
-                        hasDebugger = true;
-                        break;
-                    }
-                }
-                if ( !hasDebugger ) {
-                    getPrerequisits(policies.debug_module, access, req, missing, circular, notAllowed,
-                        dependencies, libGroup, nullptr, 1, !policies.ignore_shared_modules);
-                    auto finfo = access->getFileInfo(policies.debug_module);
-                    ModuleInfo info;
-                    info.fileName = finfo->name;
-                    info.importName = "";
-                    info.moduleName = "debug";
-                    req.push_back(info);
-                }
+                addExtraDependency("debug", policies.debug_module, missing, circular, notAllowed, req, dependencies, access, libGroup, policies);
+            }
+            if ( policies.profiler ) {
+                addExtraDependency("profiler", policies.profile_module, missing, circular, notAllowed, req, dependencies, access, libGroup, policies);
             }
             for ( auto & mod : req ) {
                 if ( !libGroup.findModule(mod.moduleName) ) {

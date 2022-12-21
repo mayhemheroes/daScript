@@ -910,6 +910,7 @@ namespace das
         if ( baseType==Type::tStructure ) {
             if ( structType ) {
                 if (dep.find(structType) != dep.end()) return false;
+                if ( structType->skipLockCheck ) return false;
                 dep.insert(structType);
                 for ( auto fld : structType->fields ) {
                     if ( fld.type->lockCheck(dep) ) {
@@ -1779,6 +1780,8 @@ namespace das
             case Type::tInt64:
             case Type::tUInt64:
             case Type::tEnumeration:
+            case Type::tEnumeration8:
+            case Type::tEnumeration16:
             case Type::tInt:
             case Type::tInt2:
             case Type::tInt3:
@@ -2026,6 +2029,22 @@ namespace das
         }
     }
 
+    bool TypeDecl::isFloatOrDouble() const {
+        if (dim.size() != 0) return false;
+        switch (baseType) {
+        case Type::tFloat:
+        case Type::tDouble:
+            return true;
+        default:;
+        }
+        return false;
+    }
+
+    bool TypeDecl::isBool() const {
+        if (dim.size() != 0) return false;
+        return baseType==Type::tBool;
+    }
+
     bool TypeDecl::isInteger() const {
         if (dim.size() != 0) return false;
         switch (baseType) {
@@ -2038,6 +2057,66 @@ namespace das
         case Type::tUInt16:
         case Type::tInt64:
         case Type::tUInt64:
+            return true;
+        default:;
+        }
+        return false;
+    }
+
+    bool TypeDecl::isSignedInteger() const {
+        if (dim.size() != 0) return false;
+        switch (baseType) {
+        case Type::tInt:
+        case Type::tInt8:
+        case Type::tInt16:
+        case Type::tInt64:
+            return true;
+        default:;
+        }
+        return false;
+    }
+
+    bool TypeDecl::isUnsignedInteger() const {
+        if (dim.size() != 0) return false;
+        switch (baseType) {
+        case Type::tUInt:
+        case Type::tBitfield:
+        case Type::tUInt8:
+        case Type::tUInt16:
+        case Type::tUInt64:
+            return true;
+        default:;
+        }
+        return false;
+    }
+
+    bool TypeDecl::isSignedIntegerOrIntVec() const {
+        if (dim.size() != 0) return false;
+        switch (baseType) {
+        case Type::tInt:
+        case Type::tInt8:
+        case Type::tInt16:
+        case Type::tInt64:
+        case Type::tInt2:
+        case Type::tInt3:
+        case Type::tInt4:
+            return true;
+        default:;
+        }
+        return false;
+    }
+
+    bool TypeDecl::isUnsignedIntegerOrIntVec() const {
+        if (dim.size() != 0) return false;
+        switch (baseType) {
+        case Type::tUInt:
+        case Type::tBitfield:
+        case Type::tUInt8:
+        case Type::tUInt16:
+        case Type::tUInt64:
+        case Type::tUInt2:
+        case Type::tUInt3:
+        case Type::tUInt4:
             return true;
         default:;
         }

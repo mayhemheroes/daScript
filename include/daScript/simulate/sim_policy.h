@@ -61,7 +61,7 @@ namespace  das {
         static __forceinline void SetBoolXor  ( bool & a, bool b, Context &, LineInfo * ) { a = a ^ b; }
     };
 
-    template <typename TT>
+    template <typename TT, typename UTT>
     struct SimPolicy_Bin : SimPolicy_Type<TT> {
         enum { BITS = sizeof(TT)*8 };
         static __forceinline TT Mod ( TT a, TT b, Context & context, LineInfo * at ) {
@@ -74,11 +74,13 @@ namespace  das {
         static __forceinline TT BinXor ( TT a, TT b, Context &, LineInfo * ) { return a ^ b; }
         static __forceinline TT BinShl ( TT a, TT b, Context &, LineInfo * ) { return a << b; }
         static __forceinline TT BinShr ( TT a, TT b, Context &, LineInfo * ) { return a >> b; }
-        static __forceinline TT BinRotl ( TT a, TT b, Context &, LineInfo * ) {
+        static __forceinline TT BinRotl ( TT _a, TT _b, Context &, LineInfo * ) {
+            auto a = (UTT)_a; auto b = (UTT)_b;
             b &= (BITS-1);
             return (a << b) | (a >> (BITS - b));
         }
-        static __forceinline TT BinRotr ( TT a, TT b, Context &, LineInfo * ) {
+        static __forceinline TT BinRotr ( TT _a, TT _b, Context &, LineInfo * ) {
+            auto a = (UTT)_a; auto b = (UTT)_b;
             b &= (BITS-1);
             return (a >> b) | (a << (BITS - b));
         }
@@ -87,13 +89,15 @@ namespace  das {
         static __forceinline void SetBinXor ( TT & a, TT b, Context &, LineInfo * ) { a ^= b; }
         static __forceinline void SetBinShl ( TT & a, TT b, Context &, LineInfo * ) { a <<= b; }
         static __forceinline void SetBinShr ( TT & a, TT b, Context &, LineInfo * ) { a >>= b; }
-        static __forceinline void SetBinRotl ( TT & a, TT b, Context &, LineInfo * ) {
+        static __forceinline void SetBinRotl ( TT & _a, TT _b, Context &, LineInfo * ) {
+            auto a = (UTT)_a; auto b = (UTT)_b;
             b &= (BITS-1);
-            a = (a << b) | (a >> (BITS - b));
+            _a = TT((a << b) | (a >> (BITS - b)));
         }
-        static __forceinline void SetBinRotr ( TT & a, TT b, Context &, LineInfo * ) {
+        static __forceinline void SetBinRotr ( TT & _a, TT _b, Context &, LineInfo * ) {
+            auto a = (UTT)_a; auto b = (UTT)_b;
             b &= (BITS-1);
-            a = (a >> b) | (a << (BITS - b));
+            _a = TT((a >> b) | (a << (BITS - b)));
         }
         static __forceinline void SetMod    ( TT & a, TT b, Context & context, LineInfo * at ) {
             if ( b==0 ) context.throw_error_at(at ? *at : LineInfo(), "division by zero in modulo");
@@ -111,31 +115,23 @@ namespace  das {
         static __forceinline TT Abs   ( TT a, Context &, LineInfo * )    { return a >= 0 ? a : -a; }
     };
 
-    struct SimPolicy_Int : SimPolicy_Bin<int32_t>, SimPolicy_MathTT<int32_t> {};
-    struct SimPolicy_UInt : SimPolicy_Bin<uint32_t>, SimPolicy_MathTT<uint32_t> {};
-    struct SimPolicy_Int64 : SimPolicy_Bin<int64_t>, SimPolicy_MathTT<int64_t> {};
-    struct SimPolicy_UInt64 : SimPolicy_Bin<uint64_t>, SimPolicy_MathTT<uint64_t> {};
+    struct SimPolicy_Int : SimPolicy_Bin<int32_t,uint32_t>, SimPolicy_MathTT<int32_t> {};
+    struct SimPolicy_UInt : SimPolicy_Bin<uint32_t,uint32_t>, SimPolicy_MathTT<uint32_t> {};
+    struct SimPolicy_Int64 : SimPolicy_Bin<int64_t,uint64_t>, SimPolicy_MathTT<int64_t> {};
+    struct SimPolicy_UInt64 : SimPolicy_Bin<uint64_t,uint64_t>, SimPolicy_MathTT<uint64_t> {};
 
     struct SimPolicy_Float : SimPolicy_Type<float> {
-        static __forceinline float Mod ( float a, float b, Context & context, LineInfo * at ) {
-            if ( b==0.0f ) context.throw_error_at(at ? *at : LineInfo(), "division by zero in modulo");
-            return (float)fmod(a,b);
-        }
-        static __forceinline void SetMod ( float & a, float b, Context & context, LineInfo * at ) {
-            if ( b==0.0f ) context.throw_error_at(at ? *at : LineInfo(), "division by zero in modulo");
-            a = (float)fmod(a,b);
-        }
+        static __forceinline float Div ( float a, float b, Context &, LineInfo * ) { return a / b; }
+        static __forceinline void SetDiv  ( float & a, float b, Context &, LineInfo * ) { a /= b; }
+        static __forceinline float Mod ( float a, float b, Context &, LineInfo * ) { return (float)fmod(a,b); }
+        static __forceinline void SetMod ( float & a, float b, Context &, LineInfo * ) { a = (float)fmod(a,b); }
     };
 
     struct SimPolicy_Double : SimPolicy_Type<double>, SimPolicy_MathTT<double> {
-        static __forceinline double Mod ( double a, double b, Context & context, LineInfo * at ) {
-            if ( b==0.0 ) context.throw_error_at(at ? *at : LineInfo(), "division by zero in modulo");
-            return fmod(a,b);
-        }
-        static __forceinline void SetMod ( double & a, double b, Context & context, LineInfo * at ) {
-            if ( b==0.0 ) context.throw_error_at(at ? *at : LineInfo(), "division by zero in modulo");
-            a = fmod(a,b);
-        }
+        static __forceinline double Div ( double a, double b, Context &, LineInfo * ) { return a / b; }
+        static __forceinline void SetDiv  ( double & a, double b, Context &, LineInfo * ) { a /= b; }
+        static __forceinline double Mod ( double a, double b, Context &, LineInfo * ) { return fmod(a,b); }
+        static __forceinline void SetMod ( double & a, double b, Context &, LineInfo * ) { a = fmod(a,b); }
         static __forceinline int Trunci ( double a, Context &, LineInfo * )          { return int(trunc(a)); }
         static __forceinline int Roundi ( double a, Context &, LineInfo * )          { return int(round(a)); }
         static __forceinline int Floori ( double a, Context &, LineInfo * )          { return int(floor(a)); }
@@ -153,12 +149,22 @@ namespace  das {
         }
         static __forceinline vec4f Clamp ( vec4f t, vec4f a, vec4f b, Context & ctx, LineInfo * at ) { return Max(a, Min(t, b, ctx, at), ctx, at); }
         static __forceinline vec4f Abs   ( vec4f a, Context &, LineInfo * ) { return v_cast_vec4f(v_absi(v_cast_vec4i(a))); }
-
         static __forceinline vec4f Sign  ( vec4f a, Context &, LineInfo * ) {
             vec4i positive = v_andi(v_splatsi(1), v_cmp_gti(v_cast_vec4i(a), v_zeroi()));
             vec4i negative = v_andi(v_splatsi(-1), v_cmp_lti(v_cast_vec4i(a), v_zeroi()));
             return v_cast_vec4f(v_ori(positive, negative));
         }
+    };
+
+    struct SimPolicy_MathVecU {
+        static __forceinline vec4f Min   ( vec4f a, vec4f b, Context &, LineInfo * ) { return v_cast_vec4f(v_minu(v_cast_vec4i(a),v_cast_vec4i(b))); }
+        static __forceinline vec4f Max   ( vec4f a, vec4f b, Context &, LineInfo * ) { return v_cast_vec4f(v_maxu(v_cast_vec4i(a),v_cast_vec4i(b))); }
+        static __forceinline vec4f Sat   ( vec4f a, Context &, LineInfo * ) {
+            return v_cast_vec4f(v_minu(v_cast_vec4i(a),v_splatsi(1)));
+        }
+        static __forceinline vec4f Clamp ( vec4f t, vec4f a, vec4f b, Context & ctx, LineInfo * at ) { return Max(a, Min(t, b, ctx, at), ctx, at); }
+        static __forceinline vec4f Abs   ( vec4f a, Context &, LineInfo * ) { return a; }
+        static __forceinline vec4f Sign  ( vec4f, Context &, LineInfo * ) { return v_zero(); }
     };
 
     struct SimPolicy_MathFloat {
@@ -259,12 +265,13 @@ namespace  das {
         static __forceinline vec4f setAligned ( const float *__restrict x ) { return v_ld(x); }
         static __forceinline vec4f setAligned ( const double *__restrict x ) { return setXYZW(float(x[0]),float(x[1]),float(x[2]),float(x[3])); }
         static __forceinline vec4f setAligned ( const int32_t  *__restrict x ) { return v_cvt_vec4f(v_ldi(x)); }
-        static __forceinline vec4f setAligned ( const uint32_t *__restrict x ) { return setAligned((const int32_t*)x); }
+        static __forceinline vec4f setAligned ( const uint32_t *__restrict x ) { return v_cvtu_vec4f_ieee(v_ldi((const int32_t *)x)); }
         static __forceinline vec4f setXY ( const float *__restrict x ) { return v_ldu_half(x); }
         static __forceinline vec4f setXY ( const double *__restrict X ) { float x[2] = {float(X[0]),float(X[1])}; return v_ldu_half(x); }
         static __forceinline vec4f setXY ( const int32_t  *__restrict x ) { return v_cvt_vec4f(v_ldui_half(x)); }
-        static __forceinline vec4f setXY ( const uint32_t *__restrict x ) { return setXY((const int32_t*)x); }
+        static __forceinline vec4f setXY ( const uint32_t *__restrict x ) { return v_cvtu_vec4f_ieee(v_ldui_half((const int32_t *)x)); }
         static __forceinline vec4f splats ( float x ) { return v_splats(x); }
+        static __forceinline vec4f splats ( double x ) { return v_splats((float)x); }
         static __forceinline vec4f splats ( int32_t  x ) { return v_splats((float)x); }
         static __forceinline vec4f splats ( uint32_t x ) { return v_splats((float)x); }
         // basic
@@ -354,10 +361,11 @@ namespace  das {
         static __forceinline vec4f setAligned ( const int32_t *__restrict x ) { return v_cast_vec4f(v_ldi(x)); }
         static __forceinline vec4f setAligned ( const uint32_t *__restrict x ) { return setAligned((const int32_t*)x); }
         static __forceinline vec4f setXY ( const float *__restrict x ) { return v_cast_vec4f(v_cvt_vec4i(v_ldu_half(x))); }
-        static __forceinline vec4f setXY ( const double *__restrict X ) { float x[2] = {float(X[0]),float(X[1])}; return v_cast_vec4f(v_cvt_vec4i(v_ldu_half(x))); }
+        static __forceinline vec4f setXY ( const double *__restrict X ) { int32_t x[2] = {int32_t(X[0]), int32_t(X[1])}; return setXY(x); }
         static __forceinline vec4f setXY ( const int32_t  *__restrict x ) { return v_cast_vec4f(v_ldui_half(x)); }
         static __forceinline vec4f setXY ( const uint32_t *__restrict x ) { return setXY((const int32_t*)x); }
         static __forceinline vec4f splats ( float x ) { return v_cast_vec4f(v_splatsi((int)x)); }
+        static __forceinline vec4f splats ( double x ) { return v_cast_vec4f(v_splatsi((int)x)); }
         static __forceinline vec4f splats ( int32_t  x ) { return v_cast_vec4f(v_splatsi(x)); }
         static __forceinline vec4f splats ( uint32_t x ) { return v_cast_vec4f(v_splatsi(x)); }
         // basic
@@ -502,6 +510,21 @@ namespace  das {
 
     template <typename TT, int mask>
     struct SimPolicy_uVec : SimPolicy_iVec<TT,mask> {
+        static __forceinline vec4f setXYZW ( uint32_t x, uint32_t y, uint32_t z, uint32_t w ) {
+            return v_cast_vec4f(v_make_vec4i(x, y, z, w));
+        }
+        static __forceinline vec4f setAligned ( const float *__restrict x ) { return v_cast_vec4f(v_cvtu_vec4i_ieee(v_ld(x))); }
+        static __forceinline vec4f setAligned ( const double *__restrict x ) { return setXYZW(uint32_t(x[0]),uint32_t(x[1]),uint32_t(x[2]),uint32_t(x[3])); }
+        static __forceinline vec4f setAligned ( const int32_t *__restrict x ) { return v_cast_vec4f(v_ldi(x)); }
+        static __forceinline vec4f setAligned ( const uint32_t *__restrict x ) { return setAligned((const int32_t*)x); }
+        static __forceinline vec4f setXY ( const float *__restrict x ) { return v_cast_vec4f(v_cvtu_vec4i_ieee(v_ldu_half(x))); }
+        static __forceinline vec4f setXY ( const double *__restrict X ) { uint32_t x[2] = {uint32_t(X[0]), uint32_t(X[1])}; return setXY(x); }
+        static __forceinline vec4f setXY ( const int32_t  *__restrict x ) { return v_cast_vec4f(v_ldui_half(x)); }
+        static __forceinline vec4f setXY ( const uint32_t *__restrict x ) { return setXY((const int32_t*)x); }
+        static __forceinline vec4f splats ( float x ) { return v_cast_vec4f(v_splatsi((uint32_t)x)); }
+        static __forceinline vec4f splats ( double x ) { return v_cast_vec4f(v_splatsi((uint32_t)x)); }
+        static __forceinline vec4f splats ( int32_t  x ) { return v_cast_vec4f(v_splatsi(x)); }
+        static __forceinline vec4f splats ( uint32_t x ) { return v_cast_vec4f(v_splatsi(x)); }
         // swapping some numeric operations
         static __forceinline vec4f Mul ( vec4f a, vec4f b, Context &, LineInfo * ) {
             return v_cast_vec4f(v_mulu(v_cast_vec4i(a), v_cast_vec4i(b)));
@@ -635,9 +658,9 @@ namespace  das {
     template <> struct SimPolicy<int2> : SimPolicy_iVec<int2,1+2>, SimPolicy_MathVecI, SimPolicy_F2IVec {};
     template <> struct SimPolicy<int3> : SimPolicy_iVec<int3,1+2+4>, SimPolicy_MathVecI, SimPolicy_F2IVec {};
     template <> struct SimPolicy<int4> : SimPolicy_iVec<int4,1+2+4+8>, SimPolicy_MathVecI, SimPolicy_F2IVec {};
-    template <> struct SimPolicy<uint2> : SimPolicy_uVec<uint2,1+2>, SimPolicy_MathVecI, SimPolicy_F2IVec {};
-    template <> struct SimPolicy<uint3> : SimPolicy_uVec<uint3,1+2+4>, SimPolicy_MathVecI, SimPolicy_F2IVec {};
-    template <> struct SimPolicy<uint4> : SimPolicy_uVec<uint4,1+2+4+8>, SimPolicy_MathVecI, SimPolicy_F2IVec {};
+    template <> struct SimPolicy<uint2> : SimPolicy_uVec<uint2,1+2>, SimPolicy_MathVecU, SimPolicy_F2IVec {};
+    template <> struct SimPolicy<uint3> : SimPolicy_uVec<uint3,1+2+4>, SimPolicy_MathVecU, SimPolicy_F2IVec {};
+    template <> struct SimPolicy<uint4> : SimPolicy_uVec<uint4,1+2+4+8>, SimPolicy_MathVecU, SimPolicy_F2IVec {};
     template <> struct SimPolicy<range> : SimPolicy_Range {};
     template <> struct SimPolicy<urange> : SimPolicy_URange {};
     template <> struct SimPolicy<char *> : SimPolicy_String {};

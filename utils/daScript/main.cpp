@@ -8,6 +8,8 @@ das::FileAccessPtr get_file_access( char * pak );//link time resolved dependenci
 
 TextPrinter tout;
 
+static string projectFile;
+static bool profilerRequired = false;
 static bool debuggerRequired = false;
 static bool pauseAfterErrors = false;
 static bool quiet = false;
@@ -30,7 +32,7 @@ bool saveToFile ( const string & fname, const string & str ) {
 }
 
 bool compile ( const string & fn, const string & cppFn, bool dryRun ) {
-    auto access = get_file_access(nullptr);
+    auto access = get_file_access((char*)(projectFile.empty() ? nullptr : projectFile.c_str()));
     ModuleGroup dummyGroup;
     CodeOfPolicies policies;
     policies.aot = false;
@@ -127,6 +129,9 @@ bool compile ( const string & fn, const string & cppFn, bool dryRun ) {
                 tw << "#pragma clang diagnostic ignored \"-Wunused-parameter\"\n";
                 tw << "#pragma clang diagnostic ignored \"-Wwritable-strings\"\n";
                 tw << "#pragma clang diagnostic ignored \"-Wunused-variable\"\n";
+                tw << "#if defined(__APPLE__)\n";
+                tw << "#pragma clang diagnostic ignored \"-Wunused-but-set-variable\"\n";
+                tw << "#endif\n";
                 tw << "#pragma clang diagnostic ignored \"-Wunsequenced\"\n";
                 tw << "#pragma clang diagnostic ignored \"-Wunused-function\"\n";
                 tw << "#endif\n";
@@ -189,6 +194,13 @@ int das_aot_main ( int argc, char * argv[] ) {
                 paranoid_validation = true;
             } else if ( strcmp(argv[ai],"-dry-run")==0 ) {
                 dryRun = true;
+            } else if ( strcmp(argv[ai],"-project")==0 ) {
+                if ( ai+1 > argc ) {
+                    tout << "das-project requires argument";
+                    return -1;
+                }
+                projectFile = argv[ai+1];
+                ai += 1;
             } else if ( strcmp(argv[ai],"--")==0 ) {
                 scriptArgs = true;
             } else if ( !scriptArgs ) {
@@ -241,7 +253,7 @@ int das_aot_main ( int argc, char * argv[] ) {
 }
 
 bool compile_and_run ( const string & fn, const string & mainFnName, bool outputProgramCode, bool dryRun, const char * introFile = nullptr ) {
-    auto access = get_file_access(nullptr);
+    auto access = get_file_access((char*)(projectFile.empty() ? nullptr : projectFile.c_str()));
     if ( introFile ) {
         auto fileInfo = make_unique<TextFileInfo>(introFile, uint32_t(strlen(introFile)), false);
         access->setFileInfo("____intro____", move(fileInfo));
@@ -252,6 +264,10 @@ bool compile_and_run ( const string & fn, const string & mainFnName, bool output
     policies.debugger = debuggerRequired;
     if ( debuggerRequired ) {
         policies.debug_module = getDasRoot() + "/daslib/debug.das";
+    }
+    if ( !policies.debugger && profilerRequired ) {
+        policies.profiler = true;
+        policies.profile_module = getDasRoot() + "/daslib/profiler.das";
     }
     policies.fail_on_no_aot = false;
     policies.fail_on_lack_of_aot_export = false;
@@ -314,10 +330,12 @@ void replace( string& str, const string& from, const string& to ) {
 void print_help() {
     tout
         << "daScript scriptName1 {scriptName2} .. {-main mainFnName} {-log} {-pause} -- {script arguments}\n"
+        << "    -project <path.das_project> path to project file\n"
         << "    -log        output program code\n"
         << "    -pause      pause after errors and pause again before exiting program\n"
         << "    -dry-run    compile and simulate script without execution\n"
         << "daScript -aot <in_script.das> <out_script.das.cpp> {-q} {-p}\n"
+        << "    -project <path.das_project> path to project file\n"
         << "    -p          paranoid validation of CPP AOT\n"
         << "    -q          supress all output\n"
         << "    -dry-run    no changes will be written\n"
@@ -351,6 +369,7 @@ int MAIN_FUNC_NAME ( int argc, char * argv[] ) {
             }
             if ( cmd=="main" ) {
                 if ( i+1 > argc ) {
+                    printf("main requires argument\n");
                     print_help();
                     return -1;
                 }
@@ -358,10 +377,12 @@ int MAIN_FUNC_NAME ( int argc, char * argv[] ) {
                 i += 1;
             } else if ( cmd=="dasroot" ) {
                 if ( i+1 > argc ) {
+                    printf("dasroot requires argument\n");
                     print_help();
                     return -1;
                 }
                 setDasRoot(argv[i+1]);
+                i += 1;
             } else if ( cmd=="log" ) {
                 outputProgramCode = true;
             } else if ( cmd=="dry-run" ) {
@@ -371,9 +392,33 @@ int MAIN_FUNC_NAME ( int argc, char * argv[] ) {
             } else if ( cmd=="pause" ) {
                 pauseAfterErrors = true;
                 pauseAfterDone = true;
+            } else if ( cmd=="project") {
+                if ( i+1 > argc ) {
+                    printf("das-project requires argument\n");
+                    print_help();
+                    return -1;
+                }
+                projectFile = argv[i+1];
+                i += 1;
             } else if ( cmd=="-das-wait-debugger") {
                 debuggerRequired = true;
+            } else if ( cmd=="-das-profiler") {
+                profilerRequired = true;
+            } else if ( cmd=="-das-profiler-log-file") {
+                // script will pick up next argument by itself
+                if ( i+1 > argc ) {
+                    printf("expecting profiler log file name\n");
+                    print_help();
+                    return -1;
+                }
+                i += 1;
+
+            } else if ( cmd=="-das-profiler-manual" ) {
+                // do nohting, script handles it
+            } else if ( cmd=="-das-profiler-memory" ) {
+                // do nohting, script handles it
             } else if ( !scriptArgs) {
+                printf("unknown command line option %s\n", cmd.c_str());
                 print_help();
                 return -1;
             }

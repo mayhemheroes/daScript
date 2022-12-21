@@ -5,7 +5,7 @@ module dap shared
 
 require daslib/json
 require daslib/json_boost
-require strings
+require daslib/strings_boost
 
 
 // https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Initialize
@@ -37,7 +37,56 @@ struct Capabilities
     supportsExceptionOptions: bool
     supportsExceptionFilterOptions: bool
     supportsDelayedStackTraceLoading: bool
+    supportsDataBreakpoints: bool
 
+
+
+
+// https://microsoft.github.io/debug-adapter-protocol/specification#Requests_SetBreakpoints
+struct SetDataBreakpointsArguments
+    breakpoints: array<DataBreakpoint>
+
+def SetDataBreakpointsArguments(data: JsonValue?)
+    var res <- [[SetDataBreakpointsArguments]]
+    var breakpoints = joj(data, "breakpoints")
+    if breakpoints != null
+        for it in breakpoints.value as _array
+            res.breakpoints |> emplace(DataBreakpoint(it))
+    return <- res
+
+// https://microsoft.github.io/debug-adapter-protocol/specification#Types_DataBreakpoint
+struct DataBreakpoint
+    dataId: string
+    accessType: string // 'read' | 'write' | 'readWrite'
+    condition: string
+    hitCondition: string
+    description: string
+    enabled: bool
+
+def DataBreakpoint(data: JsonValue?)
+    return [[DataBreakpoint dataId=jos(data, "dataId"),
+                            accessType=jos(data, "accessType"),
+                            condition=jos(data, "condition"),
+                            hitCondition=jos(data, "hitCondition"),
+                            description=jos(data, "description"),
+                            enabled=job(data, "enabled", true)
+            ]]
+
+// https://microsoft.github.io/debug-adapter-protocol/specification#Requests_DataBreakpointInfo
+struct DataBreakpointInfoArguments
+    variablesReference: double
+    name: string
+
+def DataBreakpointInfoArguments(data: JsonValue?)
+    return [[DataBreakpointInfoArguments
+                variablesReference=jon(data, "variablesReference"),
+                name=jos(data, "name")
+            ]]
+
+struct DataBreakpointInfoResponse
+    dataId: string
+    description: string
+    //accessTypes: DataBreakpointAccessType[];
 
 // https://microsoft.github.io/debug-adapter-protocol/specification#Requests_SetBreakpoints
 struct SetBreakpointsArguments
@@ -161,9 +210,10 @@ struct Variable
     indexedVariables: double
 
 def JV(data: Variable)
+    let valStr = unescape(data.value)
     return JV({{
         "name"=>JV(data.name);
-        "value"=>JV(data.value);
+        "value"=>JV(valStr);
         "variablesReference"=>JV(data.variablesReference);
         "indexedVariables"=>data.indexedVariables > 0lf ? JV(data.indexedVariables) : JVNull();
         "type"=>JV(data._type)
@@ -239,6 +289,16 @@ def JV(data: EvaluateResponse)
         "type"=>JV(data._type)
     }})
 
+
+// https://microsoft.github.io/debug-adapter-protocol/specification#Events_Breakpoint
+struct BreakpointEvent
+    reason : string // 'changed' | 'new' | 'removed' | string;
+    breakpoint : Breakpoint
+
+// https://microsoft.github.io/debug-adapter-protocol/specification#Events_Thread
+struct ThreadEvent
+    reason : string // 'started' | 'exited' | string;
+    threadId : double
 
 
 def joj(val : JsonValue?; id : string) : JsonValue?

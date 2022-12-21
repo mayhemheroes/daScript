@@ -368,7 +368,7 @@ namespace das
                 V_ARG_THIS(range);
                 V_END();
             }
-            virtual vec4f eval ( Context & context ) override {
+            virtual vec4f DAS_EVAL_ABI eval ( Context & context ) override {
                 OOT * pR = (OOT *) SimNode_AtStdVector::compute(context);
                 DAS_ASSERT(pR);
                 return cast<OOT>::from(*pR);
@@ -504,6 +504,12 @@ namespace das
                 addExtern<DAS_BIND_FUN((das_vector_push_back<TT>)),SimNode_ExtFuncCall,permanentArgFn>(*mod, lib, "push",
                     SideEffects::modifyArgument, "das_vector_push_back")->generated = true;
             }
+            if ( std::is_default_constructible<typename TT::value_type>::value ) {
+                addExtern<DAS_BIND_FUN((das_vector_push_empty<TT>)),SimNode_ExtFuncCall,permanentArgFn>(*mod, lib, "push_empty",
+                    SideEffects::modifyArgument, "das_vector_push_empty")->generated = true;
+                addExtern<DAS_BIND_FUN((das_vector_push_back_empty<TT>)),SimNode_ExtFuncCall,permanentArgFn>(*mod, lib, "push_empty",
+                    SideEffects::modifyArgument, "das_vector_push_back_empty")->generated = true;
+            }
             addExtern<DAS_BIND_FUN(das_vector_pop<TT>)>(*mod, lib, "pop",
                 SideEffects::modifyArgument, "das_vector_pop")->generated = true;
             addExtern<DAS_BIND_FUN(das_vector_clear<TT>)>(*mod, lib, "clear",
@@ -539,6 +545,14 @@ namespace das
                 addExtern<DAS_BIND_FUN((das_vector_push_back_value<TT>))>(*mod, lib, "push",
                     SideEffects::modifyArgument, "das_vector_push_back_value")
                         ->args({"vec","value"})->generated = true;
+            }
+            if ( std::is_default_constructible<typename TT::value_type>::value ) {
+              addExtern<DAS_BIND_FUN((das_vector_push_empty<TT>))>(*mod, lib, "push_empty",
+                  SideEffects::modifyArgument, "das_vector_push_empty")
+                      ->args({"vec","at","context"})->generated = true;
+              addExtern<DAS_BIND_FUN((das_vector_push_back_empty<TT>))>(*mod, lib, "push_empty",
+                    SideEffects::modifyArgument, "das_vector_push_back_empty")
+                        ->args({"vec"})->generated = true;
             }
             addExtern<DAS_BIND_FUN(das_vector_pop<TT>)>(*mod, lib, "pop",
                 SideEffects::modifyArgument, "das_vector_pop")
@@ -656,8 +670,8 @@ namespace das
 
     template <typename TT>
     void addEquNeqVal(Module & mod, const ModuleLibrary & lib) {
-        addExtern<decltype(&das_equ_val<TT>),  das_equ_val<TT>> (mod, lib, "==", SideEffects::none, "das_equ_val");
-        addExtern<decltype(&das_nequ_val<TT>), das_nequ_val<TT>>(mod, lib, "!=", SideEffects::none, "das_nequ_val");
+        addExtern<decltype(&das_equ_val<TT,TT>),  das_equ_val<TT,TT>> (mod, lib, "==", SideEffects::none, "das_equ_val");
+        addExtern<decltype(&das_nequ_val<TT,TT>), das_nequ_val<TT,TT>>(mod, lib, "!=", SideEffects::none, "das_nequ_val");
     }
 
     void setParents ( Module * mod, const char * child, const std::initializer_list<const char *> & parents );

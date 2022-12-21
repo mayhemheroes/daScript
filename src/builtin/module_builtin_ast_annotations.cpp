@@ -35,6 +35,7 @@ IMPLEMENT_EXTERNAL_TYPE_FACTORY(EnumerationAnnotation,EnumerationAnnotation)
 IMPLEMENT_EXTERNAL_TYPE_FACTORY(PassMacro,PassMacro)
 IMPLEMENT_EXTERNAL_TYPE_FACTORY(VariantMacro,VariantMacro)
 IMPLEMENT_EXTERNAL_TYPE_FACTORY(ForLoopMacro,ForLoopMacro)
+IMPLEMENT_EXTERNAL_TYPE_FACTORY(SimulateMacro,SimulateMacro)
 IMPLEMENT_EXTERNAL_TYPE_FACTORY(CaptureMacro,CaptureMacro)
 IMPLEMENT_EXTERNAL_TYPE_FACTORY(ReaderMacro,ReaderMacro)
 IMPLEMENT_EXTERNAL_TYPE_FACTORY(CommentReader,CommentReader)
@@ -414,6 +415,7 @@ namespace das {
             addField<DAS_BIND_MANAGED_FIELD(iteratorsAka)>("iteratorsAka");
             addField<DAS_BIND_MANAGED_FIELD(iteratorsAt)>("iteratorsAt");
             addField<DAS_BIND_MANAGED_FIELD(iteratorVariables)>("iteratorVariables");
+            addField<DAS_BIND_MANAGED_FIELD(iteratorsTags)>("iteratorsTags");
             addField<DAS_BIND_MANAGED_FIELD(sources)>("sources");
             addField<DAS_BIND_MANAGED_FIELD(body)>("body");
             addField<DAS_BIND_MANAGED_FIELD(visibility)>("visibility");
@@ -919,7 +921,13 @@ namespace das {
             addProperty<DAS_BIND_MANAGED_PROP(isAotAlias)>("isAotAlias","isAotAlias");
             addProperty<bool (TypeDecl::*)() const, &ManagedType::isShareable>("isShareable", "isShareable");
             addProperty<DAS_BIND_MANAGED_PROP(isIndex)>("isIndex","isIndex");
+            addProperty<DAS_BIND_MANAGED_PROP(isBool)>("isBool","isBool");
             addProperty<DAS_BIND_MANAGED_PROP(isInteger)>("isInteger","isInteger");
+            addProperty<DAS_BIND_MANAGED_PROP(isSignedInteger)>("isSignedInteger","isSignedInteger");
+            addProperty<DAS_BIND_MANAGED_PROP(isUnsignedInteger)>("isUnsignedInteger","isUnsignedInteger");
+            addProperty<DAS_BIND_MANAGED_PROP(isSignedIntegerOrIntVec)>("isSignedIntegerOrIntVec","isSignedIntegerOrIntVec");
+            addProperty<DAS_BIND_MANAGED_PROP(isUnsignedIntegerOrIntVec)>("isUnsignedIntegerOrIntVec","isUnsignedIntegerOrIntVec");
+            addProperty<DAS_BIND_MANAGED_PROP(isFloatOrDouble)>("isFloatOrDouble","isFloatOrDouble");
             addProperty<DAS_BIND_MANAGED_PROP(isNumeric)>("isNumeric","isNumeric");
             addProperty<DAS_BIND_MANAGED_PROP(isNumericComparable)>("isNumericComparable","isNumericComparable");
             addProperty<DAS_BIND_MANAGED_PROP(isPointer)>("isPointer","isPointer");
@@ -1038,12 +1046,12 @@ namespace das {
             addField<DAS_BIND_MANAGED_FIELD(module)>("_module", "module");
             // addField<DAS_BIND_MANAGED_FIELD(useFunctions)>("useFunctions");
             // addField<DAS_BIND_MANAGED_FIELD(useGlobalVariables)>("useGlobalVariables");
-            addField<DAS_BIND_MANAGED_FIELD(module)>("classParent", "classParent");
+            addField<DAS_BIND_MANAGED_FIELD(classParent)>("classParent", "classParent");
             // use global v
             addFieldEx ( "flags", "flags",
                 offsetof(Function, flags), makeFunctionFlags() );
             addFieldEx ( "moreFlags", "moreFlags",
-                offsetof(Function, flags), makeMoreFunctionFlags() );
+                offsetof(Function, moreFlags), makeMoreFunctionFlags() );
             addFieldEx ( "sideEffectFlags", "sideEffectFlags",
                 offsetof(Function, sideEffectFlags), makeFunctionSideEffectFlags() );
             addField<DAS_BIND_MANAGED_FIELD(inferStack)>("inferStack");
@@ -1052,6 +1060,7 @@ namespace das {
             addField<DAS_BIND_MANAGED_FIELD(aotHash)>("aotHash");
             // properties
             addProperty<DAS_BIND_MANAGED_PROP(getOrigin)>("origin","getOrigin");
+            addProperty<DAS_BIND_MANAGED_PROP(isGeneric)>("isGeneric","isGeneric");
         }
     };
 

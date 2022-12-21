@@ -4,22 +4,24 @@ protected:
     __fn_transform = 0,
     __fn_verifyCall = 1,
     __fn_apply = 2,
-    __fn_finish = 3,
-    __fn_patch = 4,
-    __fn_fixup = 5,
-    __fn_lint = 6,
-    __fn_complete = 7,
-    __fn_isCompatible = 8,
-    __fn_isSpecialized = 9,
-    __fn_appendToMangledName = 10,
+    __fn_generic_apply = 3,
+    __fn_finish = 4,
+    __fn_patch = 5,
+    __fn_fixup = 6,
+    __fn_lint = 7,
+    __fn_complete = 8,
+    __fn_isCompatible = 9,
+    __fn_isSpecialized = 10,
+    __fn_appendToMangledName = 11,
   };
 protected:
-  int _das_class_method_offset[11];
+  int _das_class_method_offset[12];
 public:
   AstFunctionAnnotation_Adapter ( const StructInfo * info ) {
       _das_class_method_offset[__fn_transform] = adapt_field_offset("transform",info);
       _das_class_method_offset[__fn_verifyCall] = adapt_field_offset("verifyCall",info);
       _das_class_method_offset[__fn_apply] = adapt_field_offset("apply",info);
+      _das_class_method_offset[__fn_generic_apply] = adapt_field_offset("generic_apply",info);
       _das_class_method_offset[__fn_finish] = adapt_field_offset("finish",info);
       _das_class_method_offset[__fn_patch] = adapt_field_offset("patch",info);
       _das_class_method_offset[__fn_fixup] = adapt_field_offset("fixup",info);
@@ -51,6 +53,15 @@ public:
     return getDasClassMethod(self,_das_class_method_offset[__fn_apply]);
   }
   __forceinline bool invoke_apply ( Context * __context__, Func __funcCall__, void * self, smart_ptr_raw<Function> func, ModuleGroup & group, AnnotationArgumentList const  & args, das::string & errors ) const {
+    return das_invoke_function<bool>::invoke
+      <void *,smart_ptr_raw<Function>,ModuleGroup &,AnnotationArgumentList const  &,das::string &>
+        (__context__,nullptr,__funcCall__,
+          self,func,group,args,errors);
+  }
+  __forceinline Func get_generic_apply ( void * self ) const {
+    return getDasClassMethod(self,_das_class_method_offset[__fn_generic_apply]);
+  }
+  __forceinline bool invoke_generic_apply ( Context * __context__, Func __funcCall__, void * self, smart_ptr_raw<Function> func, ModuleGroup & group, AnnotationArgumentList const  & args, das::string & errors ) const {
     return das_invoke_function<bool>::invoke
       <void *,smart_ptr_raw<Function>,ModuleGroup &,AnnotationArgumentList const  &,das::string &>
         (__context__,nullptr,__funcCall__,
@@ -170,15 +181,21 @@ protected:
     __fn_finish = 1,
     __fn_patch = 2,
     __fn_complete = 3,
+    __fn_aotPrefix = 4,
+    __fn_aotBody = 5,
+    __fn_aotSuffix = 6,
   };
 protected:
-  int _das_class_method_offset[4];
+  int _das_class_method_offset[7];
 public:
   AstStructureAnnotation_Adapter ( const StructInfo * info ) {
       _das_class_method_offset[__fn_apply] = adapt_field_offset("apply",info);
       _das_class_method_offset[__fn_finish] = adapt_field_offset("finish",info);
       _das_class_method_offset[__fn_patch] = adapt_field_offset("patch",info);
       _das_class_method_offset[__fn_complete] = adapt_field_offset("complete",info);
+      _das_class_method_offset[__fn_aotPrefix] = adapt_field_offset("aotPrefix",info);
+      _das_class_method_offset[__fn_aotBody] = adapt_field_offset("aotBody",info);
+      _das_class_method_offset[__fn_aotSuffix] = adapt_field_offset("aotSuffix",info);
   }
   __forceinline Func get_apply ( void * self ) const {
     return getDasClassMethod(self,_das_class_method_offset[__fn_apply]);
@@ -215,6 +232,33 @@ public:
       <void *,smart_ptr_raw<Structure>,smart_ptr_raw<Context>>
         (__context__,nullptr,__funcCall__,
           self,st,ctx);
+  }
+  __forceinline Func get_aotPrefix ( void * self ) const {
+    return getDasClassMethod(self,_das_class_method_offset[__fn_aotPrefix]);
+  }
+  __forceinline void invoke_aotPrefix ( Context * __context__, Func __funcCall__, void * self, smart_ptr_raw<Structure> st, AnnotationArgumentList const  & args, StringBuilderWriter & writer ) const {
+    das_invoke_function<void>::invoke
+      <void *,smart_ptr_raw<Structure>,AnnotationArgumentList const  &,StringBuilderWriter &>
+        (__context__,nullptr,__funcCall__,
+          self,st,args,writer);
+  }
+  __forceinline Func get_aotBody ( void * self ) const {
+    return getDasClassMethod(self,_das_class_method_offset[__fn_aotBody]);
+  }
+  __forceinline void invoke_aotBody ( Context * __context__, Func __funcCall__, void * self, smart_ptr_raw<Structure> st, AnnotationArgumentList const  & args, StringBuilderWriter & writer ) const {
+    das_invoke_function<void>::invoke
+      <void *,smart_ptr_raw<Structure>,AnnotationArgumentList const  &,StringBuilderWriter &>
+        (__context__,nullptr,__funcCall__,
+          self,st,args,writer);
+  }
+  __forceinline Func get_aotSuffix ( void * self ) const {
+    return getDasClassMethod(self,_das_class_method_offset[__fn_aotSuffix]);
+  }
+  __forceinline void invoke_aotSuffix ( Context * __context__, Func __funcCall__, void * self, smart_ptr_raw<Structure> st, AnnotationArgumentList const  & args, StringBuilderWriter & writer ) const {
+    das_invoke_function<void>::invoke
+      <void *,smart_ptr_raw<Structure>,AnnotationArgumentList const  &,StringBuilderWriter &>
+        (__context__,nullptr,__funcCall__,
+          self,st,args,writer);
   }
 };
 
@@ -358,6 +402,39 @@ public:
       <void *,Program * const ,Module * const ,Structure *,smart_ptr_raw<Function>>
         (__context__,nullptr,__funcCall__,
           self,prog,mod,lcs,fun);
+  }
+};
+
+class AstSimulateMacro_Adapter {
+protected:
+  enum {
+    __fn_preSimulate = 0,
+    __fn_simulate = 1,
+  };
+protected:
+  int _das_class_method_offset[2];
+public:
+  AstSimulateMacro_Adapter ( const StructInfo * info ) {
+      _das_class_method_offset[__fn_preSimulate] = adapt_field_offset("preSimulate",info);
+      _das_class_method_offset[__fn_simulate] = adapt_field_offset("simulate",info);
+  }
+  __forceinline Func get_preSimulate ( void * self ) const {
+    return getDasClassMethod(self,_das_class_method_offset[__fn_preSimulate]);
+  }
+  __forceinline bool invoke_preSimulate ( Context * __context__, Func __funcCall__, void * self, Program * const  prog, Context * const  ctx ) const {
+    return das_invoke_function<bool>::invoke
+      <void *,Program * const ,Context * const >
+        (__context__,nullptr,__funcCall__,
+          self,prog,ctx);
+  }
+  __forceinline Func get_simulate ( void * self ) const {
+    return getDasClassMethod(self,_das_class_method_offset[__fn_simulate]);
+  }
+  __forceinline bool invoke_simulate ( Context * __context__, Func __funcCall__, void * self, Program * const  prog, Context * const  ctx ) const {
+    return das_invoke_function<bool>::invoke
+      <void *,Program * const ,Context * const >
+        (__context__,nullptr,__funcCall__,
+          self,prog,ctx);
   }
 };
 

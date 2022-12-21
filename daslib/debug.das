@@ -179,7 +179,7 @@ class DAWalker: DapiDataWalker
             var ti = type_info(vi)
             unsafe
                 var v & = unsafe(varsStack[n - 1])
-                *v.children |> emplace([[DAVariable uid=frame.varId++, name=vi.name, _type=describe(ti)]])
+                *v.children |> emplace([[DAVariable uid=frame.varId++, name=vi.name, _type=describe(ti), address=intptr(pv), size=ti.size ]])
                 varsStack |> push(addr((*v.children)[length(*v.children) - 1]))
 
     def override afterStructureField(ps:void?; si: StructInfo; pv: void?; vi:VarInfo; last: bool): void
@@ -229,7 +229,7 @@ class DAWalker: DapiDataWalker
         if n > 0
             unsafe
                 var v & = unsafe(varsStack[n - 1])
-                *v.children |> emplace([[DAVariable uid=frame.varId++, name="{int64(index)}", _type=describe(ti)]])
+                *v.children |> emplace([[DAVariable uid=frame.varId++, name="{int64(index)}", _type=describe(ti), address=intptr(pe), size=ti.size]])
                 varsStack |> push(addr((*v.children)[length(*v.children) - 1]))
 
     def override afterArrayElement(ps: void?; ti: TypeInfo; pe: void?; index: uint; last: bool): void
@@ -268,7 +268,7 @@ class DAWalker: DapiDataWalker
         if n > 0
             var v & = unsafe(varsStack[n - 1])
             unsafe
-                *v.children |> emplace([[DAVariable uid=frame.varId++, name=sprint_data(pk, addr(ki), print_flags_debug)]])
+                *v.children |> emplace([[DAVariable uid=frame.varId++, name=sprint_data(pk, addr(ki), print_flags_debug), _type=describe(ki), address=intptr(pk), size=ki.size]])
                 varsStack |> push(addr((*v.children)[length(*v.children) - 1]))
 
     def override beforeTableValue(pa: DapiTable; ti: TypeInfo; pv: void?; kv: TypeInfo; index: uint; last: bool): void
@@ -313,7 +313,7 @@ class DAWalker: DapiDataWalker
         let n = length(varsStack)
         if n > 0
             var v & = unsafe(varsStack[n - 1])
-            *v.children |> emplace([[DAVariable uid=frame.varId++, name="{tupleIndex++}", _type=describe(vi)]])
+            *v.children |> emplace([[DAVariable uid=frame.varId++, name="{tupleIndex++}", _type=describe(vi), address=intptr(pv), size=vi.size]])
             unsafe
                 varsStack |> push(addr((*v.children)[length(*v.children) - 1]))
 
@@ -344,6 +344,8 @@ struct private DAVariable
     value: string
     _type: string
     indexedVariables: uint
+    address: uint64
+    size: uint
     children: array<DAVariable>?
 
 def join_with_names(a: array<DAVariable>; limit: int): string
@@ -391,6 +393,23 @@ def find_child_var(val: DAVariable; id: uint64; cb: block<(res:DAVariable): void
             if c |> find_child_var(id, cb)
                 return true
     return false
+
+def find_child_var(val: array<DAVariable>; cb: block<(res:DAVariable): bool>)
+    for v in val
+        if v |> find_child_var(cb)
+            return true
+    return false
+
+
+def find_child_var(val: DAVariable; cb: block<(res:DAVariable): bool>)
+    if cb |> invoke(val)
+        return true
+    if val.children != null
+        for c in *val.children
+            if c |> find_child_var(cb)
+                return true
+    return false
+
 
 
 struct private DAStackFrame
@@ -472,7 +491,7 @@ class private DAStackWalker: DapiStackWalker
             let ti = type_info(vinfo)
 
             var frame & = unsafe(ctx.stack[stackLen - 1])
-            var global = [[DAVariable uid=frame.varId++, name=vinfo.name, _type=describe(ti)]]
+            var global = [[DAVariable uid=frame.varId++, name=vinfo.name, _type=describe(ti), address=intptr(value), size=ti.size]]
 
             if ti != null
                 dataWalker->startWalk(frame, global) <| $
@@ -522,7 +541,7 @@ class private DAStackWalker: DapiStackWalker
         if stackLen > 0
             var frame & = unsafe(ctx.stack[stackLen - 1])
             var ti = type_info(vinfo)
-            var variable = [[DAVariable uid=frame.varId++, name=vinfo.name, _type=describe(ti)]]
+            var variable = [[DAVariable uid=frame.varId++, name=vinfo.name, _type=describe(ti), address=intptr(arg), size=ti.size]]
             if ti != null
                 dataWalker->startWalk(frame, variable) <| $
                     dataWalkerAdapter |> walk_data(arg, *ti)
@@ -540,7 +559,7 @@ class private DAStackWalker: DapiStackWalker
         if  stackLen > 0
             var frame & = unsafe(ctx.stack[stackLen-1])
             let ti = type_info(vinfo)
-            var variable = [[DAVariable uid=frame.varId++, name=vinfo.name, _type=describe(ti)]]
+            var variable = [[DAVariable uid=frame.varId++, name=vinfo.name, _type=describe(ti), address=ti.isRef ? intptr(unsafe(reinterpret<void?>arg)) : 0ul, size=ti.size]]
             if ti != null
                 dataWalker->startWalk(frame, variable) <| $
                     dataWalkerAdapter |> walk_data(arg, *ti)
@@ -552,10 +571,17 @@ class private DAStackWalker: DapiStackWalker
 
             frame.arguments |> emplace(variable)
 
+enum DABreakpointState
+    Uninitialized = 0
+    Initialized
+    Instrumented
 
 struct private DABreakpoint
     id: uint64
     line: uint
+
+    prevState: DABreakpointState
+    state: DABreakpointState
 
 typedef
     DABreakpoints = table<string; array<DABreakpoint>>
@@ -633,6 +659,8 @@ class private DAgent: DapiDebugAgent
 
     evalFrame: DAStackFrame <- DAStackFrame()
 
+    hwBreakpoints: array<int>
+
     def initAgent(var ctx: Context)
         waitConnection = wait_debugger()
         withInstruments = use_instruments()
@@ -701,7 +729,7 @@ class private DAgent: DapiDebugAgent
 
         if withInstruments
             for c in contexts
-                if !c.ctx.category.debug_context
+                if !c.ctx.category.debug_context && !ctx.ctx.category.debugger_tick
                     *c.ctx |> set_single_step(true)
 
     def reqResume(var exclude: DAContext)
@@ -715,6 +743,8 @@ class private DAgent: DapiDebugAgent
         var res: SetBreakpointsResponse
         if key_exists(breakpoints, path)
             delete breakpoints[path]
+        on_breakpoints_reset(path, length(ini.breakpoints))
+
         breakpoints |> erase(path)
         if length(ini.breakpoints) >= 0
             var breaks <- [[array<DABreakpoint>]]
@@ -732,6 +762,9 @@ class private DAgent: DapiDebugAgent
         if !withInstruments
             return <- res
 
+        for resBr in res.breakpoints
+            resBr.message = "{path}: instrumentation wasn't initined"
+
         for ctx in contexts
             if ctx.ctx.category.debug_context || ctx.ctx.category.debugger_tick
                 continue
@@ -740,14 +773,24 @@ class private DAgent: DapiDebugAgent
                 if ati.fileInfo == null
                     return false
                 let file = string(ati.fileInfo.name) |> resolve_path_cache(workingPaths, pathAliases, pathsCache)
+                let currentPath = compare_path(file, path)
+                if currentPath
+                    for resBr in res.breakpoints
+                        if !resBr.verified
+                            resBr.message = "{path}: instumentation is inited, but this line is without instructions"
                 for fileBr, brs in keys(breakpoints), values(breakpoints)
                     if compare_path(fileBr, file)
                         for br in brs
+                            if br.state == DABreakpointState Uninitialized
+                                br.state = DABreakpointState Initialized
+                        for br in brs
                             if br.line == ati.line
-                                // print("set br at {file}: {br.line}\n")
-                                if file == fileBr
+                                if currentPath
                                     for resBr in res.breakpoints
                                         resBr.verified ||= uint(resBr.line) == br.line
+                                        if resBr.verified
+                                            br.state = DABreakpointState Instrumented
+                                            resBr.message = ""
                                 return true
                         break
                 return false
@@ -886,7 +929,7 @@ class private DAgent: DapiDebugAgent
 
             if !collectingAgentData
                 collectingAgentData = true
-                collect_debug_agent_state(ctx)
+                collect_debug_agent_state(ctx, at)
                 collectingAgentData = false
 
     def override onVariable(var ctx: Context; category, name: string; info: TypeInfo; data: void?): void
@@ -894,7 +937,7 @@ class private DAgent: DapiDebugAgent
             let stackLen = length(ctxData.stack)
             if  stackLen > 0
                 var frame & = unsafe(ctxData.stack[0])
-                var variable = [[DAVariable uid=frame.varId++, name=name, _type=describe(info)]]
+                var variable = [[DAVariable uid=frame.varId++, name=name, _type=describe(info), address=intptr(data), size=info.size]]
                 walker.dataWalker->startWalk(frame, variable) <| $
                     walker.dataWalkerAdapter |> walk_data(data, info)
                 if variable.children == null
@@ -946,14 +989,62 @@ class private DAgent: DapiDebugAgent
                 if logStrMemory
                     to_log(LOG_DEBUG, "dap: DOWN string heap limit: {bytes_hr(strLimit)}\n")
 
+    def invalidateBreakpoints(var ctx: Context) : void
+        if !withInstruments
+            return
+        if server == null || !server.configurationDone
+            return
+        if ctx.category.debug_context || ctx.category.debugger_tick
+            return
+
+        for brs in values(breakpoints)
+            for br in brs
+                br.prevState = br.state
+
+        self->getContextDataFor(ctx) <| $(var ctxData: DAContext) // TODO: speedup getContextDataFor
+            *ctxData.ctx |> clear_instruments()
+            *ctxData.ctx |> instrument_node(true) <| $(ati)
+                if ati.fileInfo == null
+                    return false
+                let file = string(ati.fileInfo.name) |> resolve_path_cache(workingPaths, pathAliases, pathsCache)
+                for fileBr, brs in keys(breakpoints), values(breakpoints)
+                    if compare_path(fileBr, file)
+                        for br in brs
+                            if br.state == DABreakpointState Uninitialized
+                                br.state = DABreakpointState Initialized
+                        for br in brs
+                            if br.line == ati.line
+                                br.state = DABreakpointState Instrumented
+                                // print("dap: reset breakpoint {file}:{int(br.line)}\n")
+                                return true
+                        break
+                return false
+
+        for fileBr, brs in keys(breakpoints), values(breakpoints)
+            for br in brs
+                let wasVerified = br.prevState == DABreakpointState Instrumented
+                let isVerified = br.state == DABreakpointState Instrumented
+                if wasVerified != isVerified
+                    server->sendEvent("breakpoint", JV([[BreakpointEvent
+                        reason="changed",
+                        breakpoint=[[Breakpoint
+                            id=double(br.id),
+                            verified=br.state == DABreakpointState Instrumented,
+                            source=[[ Source path=fileBr, name=fileBr |> base_name()]],
+                            line=double(br.line),
+                            message=br.state == DABreakpointState Uninitialized ? "{fileBr}: instrumentation wasn't initined" : br.state == DABreakpointState Initialized ? "{fileBr}: instumentation is inited, but this line is without instructions" : ""
+                        ]]
+                    ]]))
+
     def override onCreateContext(var ctx: Context): void
         // unsafe
-        //     print("dap: context created {intptr(addr(ctx))} `{ctx.name}`")
+        //     print("dap: context created {intptr(addr(ctx))} {ctx.category} `{ctx.name}`")
         self->addContext(ctx)
+        invalidateBreakpoints(ctx)
 
     def override onDestroyContext(var ctx: Context): void
         // unsafe
-        //     print("dap: context destroyed {intptr(addr(ctx))} `{ctx.name}`")
+        //     print("dap: context destroyed {intptr(addr(ctx))} {ctx.category} `{ctx.name}`\n")
         self->removeContext(ctx)
 
     def getContextDataFor(var ctx: Context; cb: block<(var ctx: DAContext): void>): bool
@@ -1099,6 +1190,10 @@ class private DAServer: Server
                         self->reqAttach(seq, command, arguments)
                     elif command == "setBreakpoints"
                         self->reqSetBreakpoints(seq, command, arguments)
+                    elif command == "setDataBreakpoints"
+                        self->reqSetDataBreakpoints(seq, command, arguments)
+                    elif command == "dataBreakpointInfo"
+                        self->reqDataBreakpointInfo(seq, command, arguments)
                     elif command == "threads"
                         self->reqThreads(seq, command, arguments)
                     elif command == "stackTrace"
@@ -1133,7 +1228,8 @@ class private DAServer: Server
                                 supportTerminateDebuggee=true,
                                 supportsTerminateRequest=true,
                                 supportsExceptionOptions=false,
-                                supportsExceptionFilterOptions=false
+                                supportsExceptionFilterOptions=false,
+                                supportsDataBreakpoints=true
                                 // supportsDelayedStackTraceLoading=true
                     ]]
         defer_delete(res)
@@ -1205,6 +1301,85 @@ class private DAServer: Server
         defer_delete(ini)
         var res <- agent->onBreakpointsChanged(ini)
         defer_delete(res)
+        self->sendSuccessResponse(seq, command, JV(res))
+
+    def reqDataBreakpointInfo(seq: double; command: string; data: JsonValue?)
+        var ini <- DataBreakpointInfoArguments(data)
+        defer_delete(ini)
+        let ctxAndFrame = uint64(ini.variablesReference) / MAX_VARIABLES
+        let ctxId = uint64(ctxAndFrame) / MAX_STACK
+        var found = false
+        var valid = false
+        agent->getContextData(ctxId) <| $(var ctxData: DAContext)
+            let frameId = int(ctxAndFrame % MAX_STACK)
+            if frameId >= 0 && frameId < length(ctxData.stack)
+                let kind = uint64(ini.variablesReference) % MAX_VARIABLES
+                let line & = unsafe(ctxData.stack[frameId])
+                if kind == LOCAL_VARS || kind == ARGUMENT_VARS || kind == GLOBAL_VARS
+                    let vars & = unsafe(kind == LOCAL_VARS ? line.variables : kind == ARGUMENT_VARS ? line.arguments : line.globals)
+                    vars |> find_child_var() <| $(v)
+                        if v.name == ini.name
+                            found = true
+                            valid = v.address != 0ul
+                            if valid
+                                var res = [[DataBreakpointInfoResponse dataId="{intptr(ctxData.ctx)},{v.address},{int(v.size)}", description="{v.name} ({v.address}:{min(8, int(v.size))})" ]]
+                                defer_delete(res)
+                                self->sendSuccessResponse(seq, command, JV(res))
+                        return found
+                elif kind >= STATE_VARS && kind <= BLOCKS_POOL
+                    for state in line.state
+                        for v in state.vars
+                            if v.name == ini.name
+                                found = true
+                                valid = v.address != 0ul
+                                if valid
+                                    var res = [[DataBreakpointInfoResponse dataId="{intptr(ctxData.ctx)},{v.address},{int(v.size)}", description="{v.name} ({v.address}:{min(8, int(v.size))})" ]]
+                                    defer_delete(res)
+                                    self->sendSuccessResponse(seq, command, JV(res))
+                                break
+                else
+                    line |> find_child_var(kind) <| $(v)
+                        v |> find_child_var() <| $(vr)
+                            if vr.name == ini.name
+                                found = true
+                                valid = vr.address != 0ul
+                                if valid
+                                    var res = [[DataBreakpointInfoResponse dataId="{intptr(ctxData.ctx)},{vr.address},{int(vr.size)}", description="{v.name}.{vr.name} ({vr.address}:{min(8, int(vr.size))})" ]]
+                                    defer_delete(res)
+                                    self->sendSuccessResponse(seq, command, JV(res))
+                            return found
+        if !found || !valid
+            self->sendSuccessResponse(seq, command, JVNull())
+
+    def reqSetDataBreakpoints(seq: double; command: string; data: JsonValue?)
+        var ini <- SetDataBreakpointsArguments(data)
+        defer_delete(ini)
+
+        var res: SetBreakpointsResponse
+        defer_delete(res)
+
+        for bp in agent.hwBreakpoints
+            unsafe
+                clear_hw_breakpoint(bp)
+        agent.hwBreakpoints |> clear()
+
+        for b in ini.breakpoints
+            var setId = -1
+            var hex = 0ul
+            if b.enabled
+                var parts <- b.dataId |> split(",")
+                let ctxHex = to_uint64(parts[0], true)
+                hex = to_uint64(parts[1], true)
+                let size = to_int(parts[2])
+                unsafe
+                    var ctxPtr = reinterpret<Context?> ctxHex
+                    let ptr = reinterpret<void?> hex
+                    setId = set_hw_breakpoint(*ctxPtr, ptr, clamp(size, 1, 8), true)
+                if setId != -1
+                    agent.hwBreakpoints |> push(setId)
+                delete parts
+            res.breakpoints |> emplace([[Breakpoint verified=setId != -1, id=double(hex) ]])
+
         self->sendSuccessResponse(seq, command, JV(res))
 
     def reqThreads(seq: double; command: string; data: JsonValue?)
@@ -1524,9 +1699,9 @@ def private getGlobalVariableDefinitions(var ctx: Context)
                 if vinfo.flags.ref
                     unsafe
                         let pref = unsafe(reinterpret<void??> arg)
-                        var cvinfo = vinfo
+                        var cvinfo = *vinfo
                         cvinfo.flags &= ~TypeInfoFlags ref
-                        st |> write("\t\tlet {vinfo.name} : {describe(type_info(*vinfo))} = * reinterpret<{describe(type_info(*cvinfo))}?> {*pref}ul // already ref\n")
+                        st |> write("\t\tlet {vinfo.name} : {describe(type_info(*vinfo))} = * reinterpret<{describe(type_info(cvinfo))}?> {*pref}ul // already ref\n")
                 elif vinfo.dimSize > 0u
                     st |> write("\t\tlet {vinfo.name} : {describe(type_info(*vinfo))} = * reinterpret<{describe(type_info(*vinfo))}?> {arg}ul\n")
                 else
@@ -1595,7 +1770,7 @@ def sanitize_var(var val: DAVariable)
 
 [export]
 def accept_eval_results ( value:void?; info:TypeInfo? )
-    var evalValue <- [[DAVariable uid=g```dAgent.evalFrame.varId++, name="eval", _type=describe(info)]]
+    var evalValue <- [[DAVariable uid=g```dAgent.evalFrame.varId++, name="eval", _type=describe(info), size=info.size]]
     g```dAgent.walker.dataWalker->startWalk(g```dAgent.evalFrame, evalValue) <| $
         g```dAgent.walker.dataWalkerAdapter |> walk_data(value, *info)
     if evalValue.children == null
@@ -1636,25 +1811,31 @@ def private tick_debugger()
 
 var private g```dAgent : DAgent?
 
-[export,unused_argument(ctx)]
+[apply_in_context(name="~debug")]
+def wait_for_debugger() : bool
+    while (g```dAgent == null || g```dAgent.server == null
+       || (g```dAgent.waitConnection && (!g```dAgent.server.configurationDone || !g```dAgent.server.threadsDone)))
+        sleep(10u)
+    return true
+
+[unused_argument(ctx)]
 def private start_debug_agent(var ctx: Context)
     g```dAgent = new DAgent()
     g```dAgent->initAgent(ctx)
     install_new_debug_agent(g```dAgent, "~debug")
 
-[export]
-def private start_agent(force:bool = false): bool
+def private start_agent(force:bool = false)
     if force || !has_debug_agent_context("~debug")
         fork_debug_agent_context(@@start_debug_agent)
-        to_log(LOG_INFO, use_instruments() ? "dap: install debug agent (with instruments)\n" : "dap: install debug agent\n")
+        print(use_instruments() ? "dap: install debug agent (with instruments)\n" : "dap: install debug agent\n")
     else
-        to_log(LOG_WARNING, "dap: debug agent already exists\n")
+        print("dap: debug agent already exists\n")
     set_single_step(this_context(), !use_instruments() || wait_debugger())
     return true
 
-[init,export]
+[_macro]
 def private auto_start_debug()
-    if (is_in_aot() && loads_itself()) || is_in_debug_agent_creation() || is_compiling_macros()
+    if (is_in_aot() && loads_itself()) || is_in_debug_agent_creation() || !is_compiling_macros_in_module("debug") || is_in_completion()
         return
     this_context().category |= context_category_flags debugger_attached
     set_single_step(this_context(), !use_instruments() || wait_debugger())
@@ -1667,6 +1848,8 @@ def private auto_start_debug()
                 this_context().name := "tick thread"
                 while !is_job_que_shutting_down()
                     tick_debugger()
+            if wait_debugger()
+                wait_for_debugger()
 
 
 def private use_instruments() // or stepping debugger

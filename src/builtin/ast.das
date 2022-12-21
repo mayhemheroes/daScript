@@ -27,6 +27,7 @@ typedef
     TypeInfoMacroPtr = smart_ptr<TypeInfoMacro>
     ForLoopMacroPtr = smart_ptr<ForLoopMacro>
     CaptureMacroPtr = smart_ptr<CaptureMacro>
+    SimulateMacroPtr = smart_ptr<SimulateMacro>
 
 [generic]
 def describe ( decl : smart_ptr<TypeDecl>; extra, contracts, modules : bool = true )
@@ -57,11 +58,17 @@ def FunctionPtr ( fun : Function? ) : FunctionPtr
     unsafe
         return reinterpret<FunctionPtr> fun
 
+[generic]
+def StructurePtr ( stru : Structure? ) : StructurePtr
+    unsafe
+        return reinterpret<StructurePtr> stru
+
 [macro_interface]
 class AstFunctionAnnotation
     def abstract transform ( var call : smart_ptr<ExprCallFunc>; var errors : das_string ) : ExpressionPtr
     def abstract verifyCall ( var call : smart_ptr<ExprCallFunc>; args,progArgs:AnnotationArgumentList; var errors : das_string ) : bool
     def abstract apply ( var func:FunctionPtr; var group:ModuleGroup; args:AnnotationArgumentList; var errors : das_string ) : bool
+    def abstract generic_apply ( var func:FunctionPtr; var group:ModuleGroup; args:AnnotationArgumentList; var errors : das_string ) : bool
     def abstract finish ( var func:FunctionPtr; var group:ModuleGroup; args,progArgs:AnnotationArgumentList; var errors : das_string ) : bool
     def abstract patch ( var func:FunctionPtr; var group:ModuleGroup; args,progArgs:AnnotationArgumentList; var errors : das_string; var astChanged:bool& ) : bool
     def abstract fixup ( var func:FunctionPtr; var group:ModuleGroup; args,progArgs:AnnotationArgumentList; var errors : das_string ) : bool
@@ -82,6 +89,9 @@ class AstStructureAnnotation
     def abstract finish ( var st:StructurePtr; var group:ModuleGroup; args:AnnotationArgumentList; var errors : das_string ) : bool
     def abstract patch ( var st:StructurePtr; var group:ModuleGroup; args:AnnotationArgumentList; var errors : das_string; var astChanged:bool& ) : bool
     def abstract complete ( var st:StructurePtr; var ctx:smart_ptr<Context> ) : void
+    def abstract aotPrefix ( var st:StructurePtr; args:AnnotationArgumentList; var writer : StringBuilderWriter ) : void
+    def abstract aotBody ( var st:StructurePtr; args:AnnotationArgumentList; var writer : StringBuilderWriter ) : void
+    def abstract aotSuffix ( var st:StructurePtr; args:AnnotationArgumentList; var writer : StringBuilderWriter ) : void
 
 [macro_interface]
 class AstPassMacro
@@ -101,6 +111,11 @@ class AstForLoopMacro
 class AstCaptureMacro
     def abstract captureExpression ( prog:Program?; mod:Module?; expr:ExpressionPtr; etype:TypeDeclPtr ) : ExpressionPtr
     def abstract captureFunction ( prog:Program?; mod:Module?; var lcs:Structure?; var fun:FunctionPtr ) : void
+
+[macro_interface]
+class AstSimulateMacro
+    def abstract preSimulate ( prog:Program?; ctx:Context? ) : bool
+    def abstract simulate ( prog:Program?; ctx:Context? ) : bool
 
 [macro_interface]
 class AstReaderMacro
@@ -150,6 +165,9 @@ class AstVisitor
     def abstract preVisitProgram(prog:ProgramPtr) : void
     def abstract visitProgram(porg:ProgramPtr) : void
     def abstract preVisitProgramBody(prog:ProgramPtr;mod:Module?) : void
+// module
+    def abstract preVisitModule(mod:Module?) : void
+    def abstract visitModule(mod:Module?) : void
 // type
     def abstract preVisitTypeDecl(typ:TypeDeclPtr) : void
     def abstract visitTypeDecl(typ:TypeDeclPtr) : TypeDeclPtr
@@ -177,8 +195,8 @@ class AstVisitor
     def abstract visitFunctionArgument(fun:FunctionPtr;arg:VariablePtr;lastArg:bool) : VariablePtr
     def abstract preVisitFunctionArgumentInit(fun:FunctionPtr;arg:VariablePtr;value:ExpressionPtr) : void
     def abstract visitFunctionArgumentInit(fun:FunctionPtr;arg:VariablePtr;value:ExpressionPtr) : ExpressionPtr
-    def abstract preVisitFunctionBody(fun:FunctionPtr) : void
-    def abstract visitFunctionBody(fun:FunctionPtr) : void
+    def abstract preVisitFunctionBody(fun:FunctionPtr; expr:ExpressionPtr) : void
+    def abstract visitFunctionBody(fun:FunctionPtr; expr:ExpressionPtr) : ExpressionPtr
 // any expression there is
     def abstract preVisitExpression(expr:ExpressionPtr) : void
     def abstract visitExpression(expr:ExpressionPtr) : ExpressionPtr
@@ -273,6 +291,7 @@ class AstVisitor
     def abstract visitExprClone(expr:smart_ptr<ExprClone>) : ExpressionPtr
     def abstract preVisitExprCloneRight(expr:smart_ptr<ExprClone>;right:ExpressionPtr) : void
 // assume
+    def abstract canVisitWithAliasSubexpression(expr:smart_ptr<ExprAssume>) : bool
     def abstract preVisitExprAssume(expr:smart_ptr<ExprAssume>) : void
     def abstract visitExprAssume(expr:smart_ptr<ExprAssume>) : ExpressionPtr
 // with
@@ -428,6 +447,7 @@ class AstVisitor
     def abstract preVisitExprContinue(expr:smart_ptr<ExprContinue>) : void
     def abstract visitExprContinue(expr:smart_ptr<ExprContinue>) : ExpressionPtr
 // make block
+    def abstract canVisitMakeBlockBody(expr:smart_ptr<ExprMakeBlock>) : bool
     def abstract preVisitExprMakeBlock(expr:smart_ptr<ExprMakeBlock>) : void
     def abstract visitExprMakeBlock(expr:smart_ptr<ExprMakeBlock>) : ExpressionPtr
 // make generator
@@ -533,36 +553,48 @@ class AstVisitor
     def abstract preVisitExprCallMacro(expr:smart_ptr<ExprCallMacro>) : void
     def abstract visitExprCallMacro(expr:smart_ptr<ExprCallMacro>) : ExpressionPtr
 
+var private gc_root_AstFunctionAnnotation : array<AstFunctionAnnotation?>
+
 [macro_function]
 def make_function_annotation ( name : string; someClassPtr ) : FunctionAnnotationPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstFunctionAnnotation |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_function_annotation(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[FunctionAnnotationPtr]]
 
+var private gc_root_AstBlockAnnotation : array<AstBlockAnnotation?>
+
 [macro_function]
 def make_block_annotation ( name : string; someClassPtr ) : FunctionAnnotationPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstBlockAnnotation |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_block_annotation(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[FunctionAnnotationPtr]]
 
+var private gc_root_AstStructureAnnotation : array<AstStructureAnnotation?>
+
 [macro_function]
 def make_structure_annotation ( name : string; someClassPtr ) : StructureAnnotationPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstStructureAnnotation |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_structure_annotation(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[StructureAnnotationPtr]]
 
+var private gc_root_AstEnumerationAnnotation : array<AstEnumerationAnnotation?>
+
 [macro_function]
 def make_enumeration_annotation ( name : string; someClassPtr ) : EnumerationAnnotationPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstEnumerationAnnotation |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_enumeration_annotation(name, someClassPtr, classInfo)
     else
@@ -579,77 +611,113 @@ def make_visitor ( someClass ) : smart_ptr<VisitorAdapter>
         concept_assert(false,"can't make visitor of non-class")
         return [[smart_ptr<VisitorAdpater>]]
 
+var private gc_root_AstReaderMacro : array<AstReaderMacro?>
+
 [macro_function]
 def make_reader_macro ( name : string; someClassPtr ) : ReaderMacroPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstReaderMacro |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_reader_macro(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[ReaderMacroPtr]]
 
+var private gc_root_AstCommentReader : array<AstCommentReader?>
+
 [macro_function]
 def make_comment_reader ( name : string; someClassPtr ) : CommentReaderPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstCommentReader |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_comment_reader(someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[ReaderMacroPtr]]
 
+var private gc_root_AstCallMacro : array<AstCallMacro?>
+
 [macro_function]
 def make_call_macro ( name : string; someClassPtr ) : CallMacroPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstCallMacro |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_call_macro(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[CallMacroPtr]]
 
+var private gc_root_AstTypeInfoMacro : array<AstTypeInfoMacro?>
+
 [macro_function]
 def make_typeinfo_macro ( name : string; someClassPtr ) : TypeInfoMacroPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstTypeInfoMacro |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_typeinfo_macro(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[TypeInfoMacroPtr]]
 
+var private gc_root_AstPassMacro : array<AstPassMacro?>
+
 [macro_function]
 def make_pass_macro ( name : string; someClassPtr ) : PassMacroPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstPassMacro |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_pass_macro(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[PassMacroPtr]]
 
+var private gc_root_AstVariantMacro : array<AstVariantMacro?>
+
 [macro_function]
 def make_variant_macro ( name : string; someClassPtr ) : VariantMacroPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstVariantMacro |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_variant_macro(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[VariantMacroPtr]]
 
+var private gc_root_AstForLoopMacro : array<AstForLoopMacro?>
+
 [macro_function]
 def make_for_loop_macro ( name : string; someClassPtr ) : ForLoopMacroPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstForLoopMacro |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_for_loop_macro(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[ForLoopMacroPtr]]
 
+var private gc_root_AstCaptureMacro : array<AstCaptureMacro?>
+
 [macro_function]
 def make_capture_macro ( name : string; someClassPtr ) : CaptureMacroPtr
     static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstCaptureMacro |> push(someClassPtr)
         let classInfo = class_info(*someClassPtr)
         return make_capture_macro(name, someClassPtr, classInfo)
     else
         concept_assert(false,"expecting pointer to class")
         return [[CaptureMacroPtr]]
+
+var private gc_root_AstSimulateMacro : array<AstSimulateMacro?>
+
+[macro_function]
+def make_simulate_macro ( name : string; someClassPtr ) : SimulateMacroPtr
+    static_if typeinfo(is_pointer someClassPtr) && typeinfo(is_class *someClassPtr)
+        gc_root_AstSimulateMacro |> push(someClassPtr)
+        let classInfo = class_info(*someClassPtr)
+        return make_simulate_macro(name, someClassPtr, classInfo)
+    else
+        concept_assert(false,"expecting pointer to class")
+        return [[SimulateMacroPtr]]
 
 [macro_function]
 def add_new_block_annotation ( name:string; someClassPtr )
@@ -704,6 +772,13 @@ def add_new_for_loop_macro ( name:string; someClassPtr )
 def add_new_capture_macro ( name:string; someClassPtr )
     var ann <- make_capture_macro(name, someClassPtr)
     this_module() |> add_capture_macro(ann)
+    unsafe
+        delete ann
+
+[macro_function]
+def add_new_simulate_macro ( name:string; someClassPtr )
+    var ann <- make_simulate_macro(name, someClassPtr)
+    this_module() |> add_simulate_macro(ann)
     unsafe
         delete ann
 

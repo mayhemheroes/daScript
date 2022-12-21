@@ -26,10 +26,10 @@ to:
 */
 
 [block_macro(name="REQUIRE")]
-class DecsReq : AstFunctionAnnotation /*! This annotation provides list of required components for entity. */ {}
+class DecsReq : AstBlockAnnotation /*! This annotation provides list of required components for entity. */ {}
 
 [block_macro(name="REQUIRE_NOT")]
-class DecsReqN : AstFunctionAnnotation /*! This annotation provides list of components, which are required to not be part of the entity. */ {}
+class DecsReqN : AstBlockAnnotation /*! This annotation provides list of components, which are required to not be part of the entity. */ {}
 
 [structure_macro(name="decs_template")]
 class DecsTemplate : AstStructureAnnotation
@@ -147,6 +147,7 @@ def private append_iterator ( arch_name:string; var qloop:smart_ptr<ExprFor>; a;
     else
         qloop.iteratorsAka[qli] := ""
     qloop.iteratorsAt |> push(a.at)
+    qloop.iteratorsTags |> resize ( qli + 1 )
     var getter = getter_name(a,const_parent,can_be_optional)
     if empty(getter)
         return false

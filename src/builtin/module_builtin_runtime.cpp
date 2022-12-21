@@ -13,7 +13,10 @@
 #include "daScript/simulate/runtime_string_delete.h"
 #include "daScript/simulate/simulate_nodes.h"
 #include "daScript/simulate/aot.h"
+#include "daScript/simulate/interop.h"
 #include "daScript/misc/sysos.h"
+#include "daScript/misc/fpe.h"
+#include "daScript/simulate/debug_print.h"
 
 namespace das
 {
@@ -70,10 +73,43 @@ namespace das
         };
     };
 
+    struct RequestJitFunctionAnnotation : MarkFunctionAnnotation {
+        RequestJitFunctionAnnotation() : MarkFunctionAnnotation("jit") { }
+        virtual bool apply(const FunctionPtr & func, ModuleGroup &, const AnnotationArgumentList &, string &) override {
+            func->requestJit = true;
+            return true;
+        };
+    };
+
+    // dummy annotation for optimization hints on functions or blocks
+    struct HintFunctionAnnotation : FunctionAnnotation {
+        HintFunctionAnnotation() : FunctionAnnotation("hint") { }
+        virtual bool apply(const FunctionPtr &, ModuleGroup &, const AnnotationArgumentList &, string &) override {
+            return true;
+        };
+        virtual bool apply(ExprBlock *, ModuleGroup &, const AnnotationArgumentList &, string & ) override {
+            return true;
+        }
+        virtual bool finalize(ExprBlock *, ModuleGroup &,const AnnotationArgumentList &, const AnnotationArgumentList &, string &) override {
+            return true;
+        }
+        virtual bool finalize(const FunctionPtr &, ModuleGroup &, const AnnotationArgumentList &, const AnnotationArgumentList &, string &) override {
+            return true;
+        }
+    };
+
     struct UnsafeDerefFunctionAnnotation : MarkFunctionAnnotation {
         UnsafeDerefFunctionAnnotation() : MarkFunctionAnnotation("unsafe_deref") { }
         virtual bool apply(const FunctionPtr & func, ModuleGroup &, const AnnotationArgumentList &, string &) override {
             func->unsafeDeref = true;
+            return true;
+        };
+    };
+
+    struct SkipLockCheckFunctionAnnotation : MarkFunctionAnnotation {
+        SkipLockCheckFunctionAnnotation() : MarkFunctionAnnotation("skip_lock_check") { }
+        virtual bool apply(const FunctionPtr & func, ModuleGroup &, const AnnotationArgumentList &, string &) override {
+            func->skipLockCheck = true;
             return true;
         };
     };
@@ -127,6 +163,14 @@ namespace das
         };
     };
 
+    struct UnsafeOutsideOfForFunctionAnnotation : MarkFunctionAnnotation {
+        UnsafeOutsideOfForFunctionAnnotation() : MarkFunctionAnnotation("unsafe_outside_of_for") { }
+        virtual bool apply(const FunctionPtr & func, ModuleGroup &, const AnnotationArgumentList &, string &) override {
+            func->unsafeOutsideOfFor = true;
+            return true;
+        };
+    };
+
     struct NoAotFunctionAnnotation : MarkFunctionAnnotation {
         NoAotFunctionAnnotation() : MarkFunctionAnnotation("no_aot") { }
         virtual bool apply(const FunctionPtr & func, ModuleGroup &, const AnnotationArgumentList &, string &) override {
@@ -137,8 +181,15 @@ namespace das
 
     struct InitFunctionAnnotation : MarkFunctionAnnotation {
         InitFunctionAnnotation() : MarkFunctionAnnotation("init") { }
-        virtual bool apply(const FunctionPtr & func, ModuleGroup &, const AnnotationArgumentList &, string &) override {
+        virtual bool apply(const FunctionPtr & func, ModuleGroup &, const AnnotationArgumentList & args, string &) override {
             func->init = true;
+            for ( auto & arg : args ) {
+                if ( arg.name=="late" && arg.type == Type::tBool ) {
+                    func->lateInit = arg.bValue;
+                } else if ( arg.name=="tag" || arg.name=="before" || arg.name=="after" ) {
+                    func->lateInit = true;
+                }
+            }
             return true;
         };
         virtual bool finalize(const FunctionPtr & func, ModuleGroup &, const AnnotationArgumentList &, const AnnotationArgumentList &, string & errors) override {
@@ -243,6 +294,20 @@ namespace das
         virtual bool touch(const StructurePtr & ps, ModuleGroup &,
                            const AnnotationArgumentList &, string & ) override {
             ps->macroInterface = true;
+            return true;
+        }
+        virtual bool look ( const StructurePtr &, ModuleGroup &,
+                           const AnnotationArgumentList &, string & ) override {
+            return true;
+        }
+    };
+
+
+    struct SkipLockCheckStructureAnnotation : StructureAnnotation {
+        SkipLockCheckStructureAnnotation() : StructureAnnotation("skip_field_lock_check") {}
+        virtual bool touch(const StructurePtr & ps, ModuleGroup &,
+                           const AnnotationArgumentList &, string & ) override {
+            ps->skipLockCheck = true;
             return true;
         }
         virtual bool look ( const StructurePtr &, ModuleGroup &,
@@ -376,7 +441,7 @@ namespace das
     // core functions
 
     void builtin_throw ( char * text, Context * context, LineInfoArg * at ) {
-        context->throw_error_at(*at, text);
+        context->throw_error_at(at ? *at : LineInfo(), text);
     }
 
     void builtin_print ( char * text, Context * context ) {
@@ -417,6 +482,11 @@ namespace das
         return cast<uint64_t>::from(uhash);
     }
 
+    void heap_stats ( Context & ctx, uint64_t * bytes ) {
+        bytes[0] = ctx.heap->bytesAllocated();
+        bytes[1] = ctx.stringHeap->bytesAllocated();
+    }
+
     uint64_t heap_bytes_allocated ( Context * context ) {
         return context->heap->bytesAllocated();
     }
@@ -446,23 +516,17 @@ namespace das
         context->collectHeap(info, sheap, validate);
     }
 
-    extern bool multiline_log;
-
     void heap_report ( Context * context, LineInfoArg * info ) {
-        multiline_log = false;
         context->heap->report();
         context->reportAnyHeap(info, false, true, true, false);
-        multiline_log = true;
     }
 
     void memory_report ( bool errOnly, Context * context, LineInfoArg * info ) {
-        multiline_log = false;
         /*
         context->stringHeap->report();
         context->heap->report();
         */
         context->reportAnyHeap(info,true,true,false,errOnly);
-        multiline_log = true;
     }
 
     void builtin_table_lock ( const Table & arr, Context * context ) {
@@ -901,6 +965,10 @@ namespace das
         return ctx->stringHeap->allocateString(str);
     }
 
+    char * pass_string(char * str) {
+        return str;
+    }
+
     void set_das_string(string & str, const char * bs) {
         str = bs ? bs : "";
     }
@@ -940,6 +1008,10 @@ namespace das
         arr.flags = 0;
     }
 
+    void toLog ( int level, const char * text ) {
+        logger(level, getLogMarker(level), text);
+    }
+
     bool is_in_aot ( ) {
         return daScriptEnvironment::bound ? daScriptEnvironment::bound->g_isInAot : false;
     }
@@ -955,6 +1027,266 @@ namespace das
     addExtern<DAS_BIND_FUN(OPNAME##_str_dstr)>(*this, lib, #EXPR, SideEffects::none, DAS_TOSTRING(OPNAME##_str_dstr)); \
     addExtern<DAS_BIND_FUN(OPNAME##_dstr_str)>(*this, lib, #EXPR, SideEffects::none, DAS_TOSTRING(OPNAME##_dstr_str));
 
+    float4 das_invoke_code ( void * pfun, vec4f anything, void * cmres, Context * context ) {
+        vec4f * arguments = cast<vec4f *>::to(anything);
+        vec4f (*fun)(Context *, vec4f *, void *) = (vec4f(*)(Context *, vec4f *, void *)) pfun;
+        vec4f res = fun ( context, arguments, cmres );
+        return res;
+    }
+
+    bool das_is_jit_function ( const Func func ) {
+        auto simfn = func.PTR;
+        if ( !simfn ) return false;
+        return simfn->code && simfn->code->rtti_node_isJit();
+    }
+
+    bool das_remove_jit ( const Func func ) {
+        auto simfn = func.PTR;
+        if ( !simfn ) return false;
+        if ( simfn->code && simfn->code->rtti_node_isJit() ) {
+            auto jitNode = static_cast<SimNode_Jit *>(simfn->code);
+            simfn->code = jitNode->saved_code;
+            simfn->aot = jitNode->saved_aot;
+            simfn->aotFunction = jitNode->saved_aot_function;
+            simfn->jit = false;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    bool das_instrument_jit ( void * pfun, const Func func, Context * context ) {
+        auto simfn = func.PTR;
+        if ( !simfn ) return false;
+        if ( simfn->code && simfn->code->rtti_node_isJit() ) {
+            auto jitNode = static_cast<SimNode_Jit *>(simfn->code);
+            jitNode->func = (JitFunction) pfun;
+        } else {
+            auto node = context->code->makeNode<SimNode_Jit>(LineInfo(), (JitFunction)pfun);
+            node->saved_code = simfn->code;
+            node->saved_aot = simfn->aot;
+            node->saved_aot_function = simfn->aotFunction;
+            simfn->code = node;
+            simfn->aot = false;
+            simfn->aotFunction = nullptr;
+            simfn->jit = true;
+        }
+        return true;
+    }
+
+    void jit_exception ( const char * text, Context * context ) {
+        context->throw_error(text);
+    }
+
+    void * das_get_jit_exception ( ) {
+        return (void *) &jit_exception;
+    }
+
+    vec4f jit_call_or_fastcall ( SimFunction * fn, vec4f * args, Context * context ) {
+        return context->callOrFastcall(fn, args, nullptr);
+    }
+
+    void * das_get_jit_call_or_fastcall ( ) {
+        return (void *) &jit_call_or_fastcall;
+    }
+
+    vec4f jit_invoke_block ( const Block & blk, vec4f * args, Context * context ) {
+        return context->invoke(blk, args, nullptr, nullptr);
+    }
+
+    void * das_get_jit_invoke_block ( ) {
+        return (void *) &jit_invoke_block;
+    }
+
+    vec4f jit_invoke_block_with_cmres ( const Block & blk, vec4f * args, void * cmres, Context * context ) {
+        return context->invoke(blk, args, cmres, nullptr);
+    }
+
+    void * das_get_jit_invoke_block_with_cmres ( ) {
+        return (void *) &jit_invoke_block_with_cmres;
+    }
+
+    vec4f jit_call_with_cmres ( SimFunction * fn, vec4f * args, void * cmres, Context * context ) {
+        return context->callWithCopyOnReturn(fn, args, cmres, nullptr);
+    }
+
+    void * das_get_jit_call_with_cmres ( ) {
+        return (void *) &jit_call_with_cmres;
+    }
+
+    char * jit_string_builder ( Context & context, SimNode_CallBase * call, vec4f * args ) {
+        StringBuilderWriter writer;
+        DebugDataWalker<StringBuilderWriter> walker(writer, PrintFlags::string_builder);
+        for ( int i = 0; i!=call->nArguments; ++i ) {
+            walker.walk(args[i], call->types[i]);
+        }
+        auto length = writer.tellp();
+        if ( length ) {
+            return context.stringHeap->allocateString(writer.c_str(), length);
+        } else {
+            return nullptr;
+        }
+    }
+
+    void * das_get_jit_string_builder ( ) {
+        return (void *) &jit_string_builder;
+    }
+
+    void * jit_get_global_mnh ( uint64_t mnh, Context & context ) {
+        return context.globals + context.globalOffsetByMangledName(mnh);
+    }
+
+    void * das_get_jit_get_global_mnh () {
+        return (void *) &jit_get_global_mnh;
+    }
+
+    void * jit_alloc_heap ( uint32_t bytes, Context * context ) {
+        return context->heap->allocate(bytes);
+    }
+
+    void * das_get_jit_alloc_heap () {
+        return (void *) &jit_alloc_heap;
+    }
+
+    void * jit_alloc_persistent ( uint32_t bytes, Context * ) {
+        return das_aligned_alloc16(bytes);
+    }
+
+    void * das_get_jit_alloc_persistent () {
+        return (void *) &jit_alloc_persistent;
+    }
+
+    void jit_free_heap ( void * bytes, uint32_t size, Context * context ) {
+        context->heap->free((char *)bytes,size);
+    }
+
+    void * das_get_jit_free_heap () {
+        return (void *) &jit_free_heap;
+    }
+
+    void jit_free_persistent ( void * bytes, Context * ) {
+        das_aligned_free16(bytes);
+    }
+
+    void * das_get_jit_free_persistent () {
+        return (void *) &jit_free_persistent;
+    }
+
+    void * das_get_jit_array_lock () {
+        return (void *) &builtin_array_lock;
+    }
+
+    void * das_get_jit_array_unlock () {
+        return (void *) &builtin_array_unlock;
+    }
+
+    template <typename KeyType>
+    int32_t jit_table_at ( Table * tab, KeyType key, int32_t valueTypeSize, Context * context ) {
+        TableHash<KeyType> thh(context,valueTypeSize);
+        auto hfn = hash_function(*context, key);
+        return thh.reserve(*tab, key, hfn);
+    }
+
+    void * das_get_jit_table_at ( int32_t baseType, Context * context, LineInfoArg * at ) {
+        switch ( baseType ) {
+            case Type::tBool:           return (void *) &jit_table_at<bool>;
+            case Type::tInt8:           return (void *) &jit_table_at<int8_t>;
+            case Type::tUInt8:          return (void *) &jit_table_at<uint8_t>;
+            case Type::tInt16:          return (void *) &jit_table_at<int16_t>;
+            case Type::tUInt16:         return (void *) &jit_table_at<uint16_t>;
+            case Type::tInt64:          return (void *) &jit_table_at<int64_t>;
+            case Type::tUInt64:         return (void *) &jit_table_at<uint64_t>;
+            case Type::tEnumeration:    return (void *) &jit_table_at<int32_t>;
+            case Type::tEnumeration8:   return (void *) &jit_table_at<int8_t>;
+            case Type::tEnumeration16:  return (void *) &jit_table_at<int16_t>;
+            case Type::tInt:            return (void *) &jit_table_at<int32_t>;
+            case Type::tInt2:           return (void *) &jit_table_at<int2>;
+            case Type::tInt3:           return (void *) &jit_table_at<int3>;
+            case Type::tInt4:           return (void *) &jit_table_at<int4>;
+            case Type::tUInt:           return (void *) &jit_table_at<uint32_t>;
+            case Type::tBitfield:       return (void *) &jit_table_at<uint32_t>;
+            case Type::tUInt2:          return (void *) &jit_table_at<uint2>;
+            case Type::tUInt3:          return (void *) &jit_table_at<uint3>;
+            case Type::tUInt4:          return (void *) &jit_table_at<uint4>;
+            case Type::tFloat:          return (void *) &jit_table_at<float>;
+            case Type::tFloat2:         return (void *) &jit_table_at<float2>;
+            case Type::tFloat3:         return (void *) &jit_table_at<float3>;
+            case Type::tFloat4:         return (void *) &jit_table_at<float4>;
+            case Type::tRange:          return (void *) &jit_table_at<range>;
+            case Type::tURange:         return (void *) &jit_table_at<urange>;
+            case Type::tString:         return (void *) &jit_table_at<char *>;
+            case Type::tDouble:         return (void *) &jit_table_at<double>;
+            case Type::tPointer:        return (void *) &jit_table_at<void *>;
+        }
+        context->throw_error_at(at ? *at : LineInfo(), "jit_table_at: unsupported key type %s", das_to_string(Type(baseType)).c_str() );
+        return nullptr;
+    }
+
+    int32_t jit_str_cmp ( char * a, char * b ) {
+        return strcmp(a ? a : "",b ? b : "");
+    }
+
+    void * das_get_jit_str_cmp () {
+        return (void *) &jit_str_cmp;
+    }
+
+    struct JitStackState {
+        char * EP;
+        char * SP;
+    };
+
+    void jit_prologue ( int32_t stackSize, JitStackState * stackState, Context * context ) {
+        if (!context->stack.push(stackSize, stackState->EP, stackState->SP)) {
+            context->throw_error("stack overflow");
+        }
+#if DAS_ENABLE_STACK_WALK
+        Prologue * pp = (Prologue *)context->stack.sp();
+        pp->info = nullptr;
+        pp->fileName = "`jit`";
+        pp->stackSize = stackSize;
+#endif
+    }
+
+    void * das_get_jit_prologue () {
+        return (void *) &jit_prologue;
+    }
+
+    void jit_epilogue ( JitStackState * stackState, Context * context ) {
+        context->stack.pop(stackState->EP, stackState->SP);
+    }
+
+    void * das_get_jit_epilogue () {
+        return (void *) &jit_epilogue;
+    }
+
+    void jit_make_block ( Block * blk, int32_t argStackTop, void * bodyNode, void * jitImpl, void * funcInfo, Context * context ) {
+        JitBlock * block = (JitBlock *) blk;
+        block->stackOffset = context->stack.spi();
+        block->argumentsOffset = argStackTop ? (context->stack.spi() + argStackTop) : 0;
+        block->body = (SimNode *)(void*) block->node;
+        block->aotFunction = nullptr;
+        block->jitFunction = jitImpl;
+        block->functionArguments = context->abiArguments();
+        block->info = (FuncInfo *) funcInfo;
+        new (block->node) SimNode_JitBlock(LineInfo(), (JitBlockFunction) bodyNode);
+    }
+
+    void * das_get_jit_make_block () {
+        return (void *) &jit_make_block;
+    }
+
+    void jit_debug ( vec4f res, TypeInfo * typeInfo, char * message, Context * context ) {
+        FPE_DISABLE;
+        TextWriter ssw;
+        if ( message ) ssw << message << " ";
+        ssw << debug_type(typeInfo) << " = " << debug_value(res, typeInfo, PrintFlags::debugger) << "\n";
+        context->to_out(ssw.str().c_str());
+    }
+
+    void * das_get_jit_debug () {
+        return (void *) &jit_debug;
+    }
+
     void Module_BuiltIn::addRuntime(ModuleLibrary & lib) {
         // printer flags
         addAlias(makePrintFlags());
@@ -963,21 +1295,26 @@ namespace das
         // function annotations
         addAnnotation(make_smart<CommentAnnotation>());
         addAnnotation(make_smart<MacroInterfaceAnnotation>());
+        addAnnotation(make_smart<SkipLockCheckStructureAnnotation>());
         addAnnotation(make_smart<MarkFunctionOrBlockAnnotation>());
         addAnnotation(make_smart<CppAlignmentAnnotation>());
         addAnnotation(make_smart<GenericFunctionAnnotation>());
         addAnnotation(make_smart<MacroFunctionAnnotation>());
         addAnnotation(make_smart<MacroFnFunctionAnnotation>());
+        addAnnotation(make_smart<HintFunctionAnnotation>());
+        addAnnotation(make_smart<RequestJitFunctionAnnotation>());
         addAnnotation(make_smart<ExportFunctionAnnotation>());
         addAnnotation(make_smart<NoLintFunctionAnnotation>());
         addAnnotation(make_smart<SideEffectsFunctionAnnotation>());
         addAnnotation(make_smart<RunAtCompileTimeFunctionAnnotation>());
         addAnnotation(make_smart<UnsafeOpFunctionAnnotation>());
+        addAnnotation(make_smart<UnsafeOutsideOfForFunctionAnnotation>());
         addAnnotation(make_smart<NoAotFunctionAnnotation>());
         addAnnotation(make_smart<InitFunctionAnnotation>());
         addAnnotation(make_smart<FinalizeFunctionAnnotation>());
         addAnnotation(make_smart<HybridFunctionAnnotation>());
         addAnnotation(make_smart<UnsafeDerefFunctionAnnotation>());
+        addAnnotation(make_smart<SkipLockCheckFunctionAnnotation>());
         addAnnotation(make_smart<MarkUsedFunctionAnnotation>());
         addAnnotation(make_smart<LocalOnlyFunctionAnnotation>());
         addAnnotation(make_smart<PersistentStructureAnnotation>());
@@ -1135,8 +1472,17 @@ namespace das
         addInterop<builtin_verify_locks,void,vec4f>(*this, lib, "_builtin_verify_locks",
             SideEffects::modifyArgumentAndExternal, "builtin_verify_locks")
                 ->arg("anything");
+        addExtern<DAS_BIND_FUN(builtin_set_verify_array_locks)>(*this, lib, "set_verify_array_locks",
+            SideEffects::modifyArgument, "builtin_set_verify_array_locks")
+                ->args({"array","check"})->unsafeOperation = true;
+        addExtern<DAS_BIND_FUN(builtin_set_verify_table_locks)>(*this, lib, "set_verify_table_locks",
+            SideEffects::modifyArgument, "builtin_set_verify_table_locks")
+                ->args({"table","check"})->unsafeOperation = true;
+        addExtern<DAS_BIND_FUN(builtin_set_verify_context)>(*this, lib, "set_verify_context_locks",
+            SideEffects::modifyExternal, "builtin_set_verify_context")
+                ->args({"slc","context"})->unsafeOperation = true;
         // table functions
-        addExtern<DAS_BIND_FUN(builtin_table_clear)>(*this, lib, "clear",
+        addExtern<DAS_BIND_FUN(builtin_table_clear)>(*this, lib, "_builtin_table_clear",
             SideEffects::modifyArgument, "builtin_table_clear")
                 ->args({"table","context"});
         addExtern<DAS_BIND_FUN(builtin_table_size)>(*this, lib, "length",
@@ -1250,6 +1596,9 @@ namespace das
         addExtern<DAS_BIND_FUN(to_das_string)>(*this, lib, "string",
             SideEffects::none, "to_das_string")
                 ->args({"source","context"});
+        addExtern<DAS_BIND_FUN(pass_string)>(*this, lib, "string",
+            SideEffects::none, "pass_string")
+                ->args({"source"});
         addExtern<DAS_BIND_FUN(set_das_string)>(*this, lib, "clone",
             SideEffects::modifyArgument,"set_das_string")
                 ->args({"target","src"});
@@ -1300,5 +1649,67 @@ namespace das
         addConstant<int>(*this, "LOG_TRACE",    LogLevel::trace);
         // separators
         addConstant(*this, "VEC_SEP",   DAS_PRINT_VEC_SEPARATROR);
+        // clz, ctz, popcnt
+        addExtern<DAS_BIND_FUN(uint32_clz)>(*this, lib, "clz", SideEffects::none, "uint32_clz")->arg("bits");
+        addExtern<DAS_BIND_FUN(uint64_clz)>(*this, lib, "clz", SideEffects::none, "uint64_clz")->arg("bits");
+        addExtern<DAS_BIND_FUN(uint32_ctz)>(*this, lib, "ctz", SideEffects::none, "uint32_ctz")->arg("bits");
+        addExtern<DAS_BIND_FUN(uint64_ctz)>(*this, lib, "ctz", SideEffects::none, "uint64_ctz")->arg("bits");
+        addExtern<DAS_BIND_FUN(uint32_popcount)>(*this, lib, "popcnt", SideEffects::none, "uint32_popcount")->arg("bits");
+        addExtern<DAS_BIND_FUN(uint64_popcount)>(*this, lib, "popcnt", SideEffects::none, "uint64_popcount")->arg("bits");
+        // jit
+        addExtern<DAS_BIND_FUN(das_invoke_code)>(*this, lib, "invoke_code",
+            SideEffects::worstDefault, "das_invoke_code")
+                ->args({"code","arguments","cmres","context"})->unsafeOperation = true;
+        addExtern<DAS_BIND_FUN(das_instrument_jit)>(*this, lib, "instrument_jit",
+            SideEffects::worstDefault, "das_instrument_jit")
+                ->args({"code","function","context"})->unsafeOperation = true;
+        addExtern<DAS_BIND_FUN(das_remove_jit)>(*this, lib, "remove_jit",
+            SideEffects::worstDefault, "das_remove_jit")
+                ->args({"function"})->unsafeOperation = true;
+        addExtern<DAS_BIND_FUN(das_is_jit_function)>(*this, lib, "is_jit_function",
+            SideEffects::worstDefault, "das_is_jit_function")
+                ->args({"function"});
+        addExtern<DAS_BIND_FUN(das_get_jit_exception)>(*this, lib, "get_jit_exception",
+            SideEffects::none, "das_get_jit_exception");
+        addExtern<DAS_BIND_FUN(das_get_jit_call_or_fastcall)>(*this, lib, "get_jit_call_or_fastcall",
+            SideEffects::none, "das_get_jit_call_or_fastcall");
+        addExtern<DAS_BIND_FUN(das_get_jit_call_with_cmres)>(*this, lib, "get_jit_call_with_cmres",
+            SideEffects::none, "das_get_jit_call_with_cmres");
+        addExtern<DAS_BIND_FUN(das_get_jit_invoke_block)>(*this, lib, "get_jit_invoke_block",
+            SideEffects::none, "das_get_jit_invoke_block");
+        addExtern<DAS_BIND_FUN(das_get_jit_invoke_block_with_cmres)>(*this, lib, "get_jit_invoke_block_with_cmres",
+            SideEffects::none, "das_get_jit_invoke_block_with_cmres");
+        addExtern<DAS_BIND_FUN(das_get_jit_string_builder)>(*this, lib, "get_jit_string_builder",
+            SideEffects::none, "das_get_jit_string_builder");
+        addExtern<DAS_BIND_FUN(das_get_jit_get_global_mnh)>(*this, lib, "get_jit_get_global_mnh",
+            SideEffects::none, "das_get_jit_get_global_mnh");
+        addExtern<DAS_BIND_FUN(das_get_jit_alloc_heap)>(*this, lib, "get_jit_alloc_heap",
+            SideEffects::none, "das_get_jit_alloc_heap");
+        addExtern<DAS_BIND_FUN(das_get_jit_alloc_persistent)>(*this, lib, "get_jit_alloc_persistent",
+            SideEffects::none, "das_get_jit_alloc_persistent");
+        addExtern<DAS_BIND_FUN(das_get_jit_free_heap)>(*this, lib, "get_jit_free_heap",
+            SideEffects::none, "das_get_jit_free_heap");
+        addExtern<DAS_BIND_FUN(das_get_jit_free_persistent)>(*this, lib, "get_jit_free_persistent",
+            SideEffects::none, "das_get_jit_free_persistent");
+        addExtern<DAS_BIND_FUN(das_get_jit_array_lock)>(*this, lib, "get_jit_array_lock",
+            SideEffects::none, "das_get_jit_array_lock");
+        addExtern<DAS_BIND_FUN(das_get_jit_array_unlock)>(*this, lib, "get_jit_array_unlock",
+            SideEffects::none, "das_get_jit_array_unlock");
+        addExtern<DAS_BIND_FUN(das_get_jit_table_at)>(*this, lib, "get_jit_table_at",
+            SideEffects::none, "das_get_jit_table_at");
+        addExtern<DAS_BIND_FUN(das_get_jit_str_cmp)>(*this, lib, "get_jit_str_cmp",
+            SideEffects::none, "das_get_jit_str_cmp");
+        addExtern<DAS_BIND_FUN(das_get_jit_prologue)>(*this, lib, "get_jit_prologue",
+            SideEffects::none, "das_get_jit_prologue");
+        addExtern<DAS_BIND_FUN(das_get_jit_epilogue)>(*this, lib, "get_jit_epilogue",
+            SideEffects::none, "das_get_jit_epilogue");
+        addExtern<DAS_BIND_FUN(das_get_jit_make_block)>(*this, lib, "get_jit_make_block",
+            SideEffects::none, "das_get_jit_make_block");
+        addExtern<DAS_BIND_FUN(das_get_jit_debug)>(*this, lib, "get_jit_debug",
+            SideEffects::none, "das_get_jit_debug");
+        addConstant<uint32_t>(*this, "SIZE_OF_PROLOGUE", uint32_t(sizeof(Prologue)));
+        addConstant<uint32_t>(*this, "CONTEXT_OFFSET_OF_EVAL_TOP", uint32_t(uint32_t(offsetof(Context, stack) + offsetof(StackAllocator, evalTop))));
+        addConstant<uint32_t>(*this, "CONTEXT_OFFSET_OF_GLOBALS", uint32_t(uint32_t(offsetof(Context, globals))));
+        addUsing<das::string>(*this, lib, "das::string");
     }
 }

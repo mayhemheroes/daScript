@@ -214,6 +214,7 @@ let private glsl_functions <- {{
     "uint4"    =>  "uvec4";
     "floori"    =>  "floor";
     "lerp"      =>  "mix";
+    "fast_normalize" => "normalize";
     "saturate"  =>  "SATURATE";
     "int_bits_to_float" => "intBitsToFloat";
     "uint_bits_to_float" => "uintBitsToFloat";
@@ -310,7 +311,12 @@ class GlslExport : AstVisitor
     def describe_glsl_type ( t : TypeDeclPtr )
         return self->describe_glsl_type_ex(t,true)
     def glsl_function_name ( fun:FunctionPtr )
-        var funname = "{fun.name}"
+        var funname = build_string <| $ ( var tw )
+            for Ch in string(fun.name)
+                if Ch=='`'
+                    tw |> write("_")
+                else
+                    tw |> write_char(Ch)
         if fun.flags.builtIn
             pass
         elif fun._module.name=="$"
@@ -652,7 +658,7 @@ class GlslExport : AstVisitor
         *writer |> write("{self->describe_glsl_type(fun.result)} ")
         var fnName = isMain ? "main" : self->glsl_function_name(fun)
         *writer |> write("{fnName}(")
-    def override preVisitFunctionBody(fun:FunctionPtr)
+    def override preVisitFunctionBody(fun:FunctionPtr; expr:ExpressionPtr)
         *writer |> write(")")
         for ann in fun.annotations
             if ann.annotation.name=="pixel_shader" // TODO: other ann

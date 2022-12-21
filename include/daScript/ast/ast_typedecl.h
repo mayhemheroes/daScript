@@ -87,7 +87,13 @@ namespace das {
         bool isShareable(das_set<Structure*> & dep) const;
         bool isShareable() const;
         bool isIndex() const;
+        bool isBool() const;
         bool isInteger() const;
+        bool isSignedInteger() const;
+        bool isUnsignedInteger() const;
+        bool isSignedIntegerOrIntVec() const;
+        bool isUnsignedIntegerOrIntVec() const;
+        bool isFloatOrDouble() const;
         bool isNumeric() const;
         bool isNumericStorage() const;
         bool isNumericComparable() const;
@@ -243,14 +249,22 @@ namespace das {
 #if defined(_MSC_VER)
     template<> struct ToBasicType<long>             { enum { type = Type::tInt }; };
     template<> struct ToBasicType<unsigned long>    { enum { type = Type::tUInt }; };
+    template<> struct ToBasicType<long double>      { enum { type = Type::tDouble }; };
+    template<> struct ToBasicType<wchar_t>          { enum { type = Type::tUInt16 }; };
 #endif
 #if defined(__APPLE__)
     // note - under MSVC size_t is unsigned __int64 (or 32) accordingly
-    template<> struct ToBasicType<size_t>       { enum { type = sizeof(size_t)==8 ? Type::tUInt64 : Type::tUInt }; };
+    template<> struct ToBasicType<size_t>           { enum { type = sizeof(size_t)==8 ? Type::tUInt64 : Type::tUInt }; };
+    template<> struct ToBasicType<long>             { enum { type = Type::tInt }; };
+    template<> struct ToBasicType<long double>      { enum { type = Type::tDouble }; };
+    template<> struct ToBasicType<wchar_t>          { enum { type = Type::tUInt16 }; };
 #endif
 #if defined(__linux__)
     template<> struct ToBasicType<long long int>      { enum { type = Type::tInt64 }; };
     template<> struct ToBasicType<unsigned long long int>     { enum { type = Type::tUInt64 }; };
+#endif
+#ifdef _EMSCRIPTEN_VER
+    template<> struct ToBasicType<unsigned long>    { enum { type = Type::tUInt }; };
 #endif
     template<> struct ToBasicType<float2>       { enum { type = Type::tFloat2 }; };
     template<> struct ToBasicType<float3>       { enum { type = Type::tFloat3 }; };

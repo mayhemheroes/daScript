@@ -63,6 +63,12 @@ This macro implements `qmacro_expr` expression reification. Expected input is a 
 .. das:attribute:: qmacro_variable
 
 This macro implements `qmacro_variable` expression reification. Expected input is are variable name and type expression (type<...>). Result is a new VariablePtr with the matching name and type.
+.. _call-macro-templates_boost-qmacro_block_to_array:
+
+.. das:attribute:: qmacro_block_to_array
+
+This macro implements `qmacro_block_to_array` expression reification. Expected input is a block expression (ExprMakeBlock over ExprBlock). It applies reification rules to the expression, and returns array with contents of the 'list' section of the block.
+
 .. _call-macro-templates_boost-qmacro_function:
 
 .. das:attribute:: qmacro_function
@@ -73,6 +79,12 @@ This macro implements `qmacro_function` expression reification. Expected input i
 .. das:attribute:: qmacro
 
 This macro implements `qmacro` expression reification. It applies reification rules to the expression, and returns direct result of the substitution.
+
+.. _call-macro-templates_boost-qmacro_method:
+
+.. das:attribute:: qmacro_method
+
+This macro implements expression reification for class methods.
 
 .. _call-macro-templates_boost-qmacro_block:
 
@@ -694,6 +706,51 @@ make_expression_block returns smart_ptr< :ref:`ast::ExprBlock <handle-ast-ExprBl
 
 Create ExprBlock and move all expressions from expr to the list of the block.
 
+.. _function-_at_templates_boost_c__c_make_expression_block_H_ls__builtin__c__c_dasvector_rq_smart_ptr_rq_Expression_gr_:
+
+.. das:function:: make_expression_block(exprs: dasvector`smart_ptr`Expression)
+
+make_expression_block returns smart_ptr< :ref:`ast::ExprBlock <handle-ast-ExprBlock>` >
+
++--------+------------------------------------------------------------------------------------------------+
++argument+argument type                                                                                   +
++========+================================================================================================+
++exprs   + :ref:`builtin::dasvector`smart_ptr`Expression <handle-builtin-dasvector`smart_ptr`Expression>` +
++--------+------------------------------------------------------------------------------------------------+
+
+
+Create ExprBlock and move all expressions from expr to the list of the block.
+
+.. _function-_at_templates_boost_c__c_add_type_ptr_ref_Y_ls_TypeDeclPtr_gr_1_ls_H_ls_ast_c__c_TypeDecl_gr__gr_?M:
+
+.. das:function:: add_type_ptr_ref(a: TypeDeclPtr)
+
+add_type_ptr_ref returns  :ref:`TypeDeclPtr <alias-TypeDeclPtr>` 
+
++--------+----------------------------------------+
++argument+argument type                           +
++========+========================================+
++a       + :ref:`TypeDeclPtr <alias-TypeDeclPtr>` +
++--------+----------------------------------------+
+
+
+Implementation details for the reification. This adds any array to the rules.
+
+.. _function-_at_templates_boost_c__c_add_type_ptr_ref_Y_ls_StructurePtr_gr_1_ls_H_ls_ast_c__c_Structure_gr__gr_?M:
+
+.. das:function:: add_type_ptr_ref(a: StructurePtr)
+
+add_type_ptr_ref returns  :ref:`StructurePtr <alias-StructurePtr>` 
+
++--------+------------------------------------------+
++argument+argument type                             +
++========+==========================================+
++a       + :ref:`StructurePtr <alias-StructurePtr>` +
++--------+------------------------------------------+
+
+
+Implementation details for the reification. This adds any array to the rules.
+
 .. _function-_at_templates_boost_c__c_apply_qmacro_1_ls_H_ls_ast_c__c_Expression_gr__gr_?M_CN_ls_rules_gr_0_ls_S_ls_Template_gr__gr_1_ls_v_gr__builtin_:
 
 .. das:function:: apply_qmacro(expr: smart_ptr<ast::Expression>; blk: block<(rules:templates_boost::Template -const):void> const)
@@ -716,6 +773,23 @@ Implementation details for the expression reificaiton. This is a generat express
 .. das:function:: apply_qblock(expr: smart_ptr<ast::Expression>; blk: block<(rules:templates_boost::Template -const):void> const)
 
 apply_qblock returns  :ref:`ExpressionPtr <alias-ExpressionPtr>` 
+
++--------+----------------------------------------------------------------------------------------------+
++argument+argument type                                                                                 +
++========+==============================================================================================+
++expr    +smart_ptr< :ref:`ast::Expression <handle-ast-Expression>` >                                   +
++--------+----------------------------------------------------------------------------------------------+
++blk     +block<(rules: :ref:`templates_boost::Template <struct-templates_boost-Template>` ):void> const+
++--------+----------------------------------------------------------------------------------------------+
+
+
+Implementation details for the expression reificaiton. This is a block reification.
+
+.. _function-_at_templates_boost_c__c_apply_qblock_to_array_1_ls_H_ls_ast_c__c_Expression_gr__gr_?M_CN_ls_rules_gr_0_ls_S_ls_Template_gr__gr_1_ls_v_gr__builtin_:
+
+.. das:function:: apply_qblock_to_array(expr: smart_ptr<ast::Expression>; blk: block<(rules:templates_boost::Template -const):void> const)
+
+apply_qblock_to_array returns array< :ref:`ExpressionPtr <alias-ExpressionPtr>` >
 
 +--------+----------------------------------------------------------------------------------------------+
 +argument+argument type                                                                                 +
@@ -828,6 +902,27 @@ apply_qmacro_function returns  :ref:`FunctionPtr <alias-FunctionPtr>`
 
 Implementation details for reification. This is a function generation reification.
 
+.. _function-_at_templates_boost_c__c_apply_qmacro_method_Cs_CY_ls_StructurePtr_gr_1_ls_H_ls_ast_c__c_Structure_gr__gr_?M_1_ls_H_ls_ast_c__c_Expression_gr__gr_?M_CN_ls_rules_gr_0_ls_S_ls_Template_gr__gr_1_ls_v_gr__builtin_:
+
+.. das:function:: apply_qmacro_method(fname: string const; parent: StructurePtr; expr: smart_ptr<ast::Expression>; blk: block<(rules:templates_boost::Template -const):void> const)
+
+apply_qmacro_method returns  :ref:`FunctionPtr <alias-FunctionPtr>` 
+
++--------+----------------------------------------------------------------------------------------------+
++argument+argument type                                                                                 +
++========+==============================================================================================+
++fname   +string const                                                                                  +
++--------+----------------------------------------------------------------------------------------------+
++parent  + :ref:`StructurePtr <alias-StructurePtr>`                                                     +
++--------+----------------------------------------------------------------------------------------------+
++expr    +smart_ptr< :ref:`ast::Expression <handle-ast-Expression>` >                                   +
++--------+----------------------------------------------------------------------------------------------+
++blk     +block<(rules: :ref:`templates_boost::Template <struct-templates_boost-Template>` ):void> const+
++--------+----------------------------------------------------------------------------------------------+
+
+
+Implementation details for reification. This is a class method function generation reification.
+
 .. _function-_at_templates_boost_c__c_apply_qmacro_variable_Cs_1_ls_H_ls_ast_c__c_Expression_gr__gr_?M_CN_ls_rules_gr_0_ls_S_ls_Template_gr__gr_1_ls_v_gr__builtin_:
 
 .. das:function:: apply_qmacro_variable(vname: string const; expr: smart_ptr<ast::Expression>; blk: block<(rules:templates_boost::Template -const):void> const)
@@ -846,6 +941,118 @@ apply_qmacro_variable returns  :ref:`VariablePtr <alias-VariablePtr>`
 
 
 Implementation details for reification. This is a variable generation reification.
+
+.. _function-_at_templates_boost_c__c_add_structure_field_Y_ls_StructurePtr_gr_1_ls_H_ls_ast_c__c_Structure_gr__gr_?M_Cs_Y_ls_TypeDeclPtr_gr_1_ls_H_ls_ast_c__c_TypeDecl_gr__gr_?M_Y_ls_ExpressionPtr_gr_1_ls_H_ls_ast_c__c_Expression_gr__gr_?M:
+
+.. das:function:: add_structure_field(cls: StructurePtr; name: string const; t: TypeDeclPtr; init: ExpressionPtr)
+
+add_structure_field returns int const
+
++--------+--------------------------------------------+
++argument+argument type                               +
++========+============================================+
++cls     + :ref:`StructurePtr <alias-StructurePtr>`   +
++--------+--------------------------------------------+
++name    +string const                                +
++--------+--------------------------------------------+
++t       + :ref:`TypeDeclPtr <alias-TypeDeclPtr>`     +
++--------+--------------------------------------------+
++init    + :ref:`ExpressionPtr <alias-ExpressionPtr>` +
++--------+--------------------------------------------+
+
+
+Adds a field to the structure.
+
+.. _function-_at_templates_boost_c__c_make_class_Cs_C1_ls_H_ls_rtti_c__c_Module_gr__gr_?:
+
+.. das:function:: make_class(name: string const; mod: rtti::Module? const)
+
+make_class returns smart_ptr< :ref:`ast::Structure <handle-ast-Structure>` >
+
++--------+-------------------------------------------------+
++argument+argument type                                    +
++========+=================================================+
++name    +string const                                     +
++--------+-------------------------------------------------+
++mod     + :ref:`rtti::Module <handle-rtti-Module>` ? const+
++--------+-------------------------------------------------+
+
+
+Creates a class structure. Adds __rtti, __finalize fields.
+
+.. _function-_at_templates_boost_c__c_make_class_Cs_CY_ls_StructurePtr_gr_1_ls_H_ls_ast_c__c_Structure_gr__gr_?M_C1_ls_H_ls_rtti_c__c_Module_gr__gr_?:
+
+.. das:function:: make_class(name: string const; baseClass: StructurePtr; mod: rtti::Module? const)
+
+make_class returns smart_ptr< :ref:`ast::Structure <handle-ast-Structure>` >
+
++---------+-------------------------------------------------+
++argument +argument type                                    +
++=========+=================================================+
++name     +string const                                     +
++---------+-------------------------------------------------+
++baseClass+ :ref:`StructurePtr <alias-StructurePtr>`        +
++---------+-------------------------------------------------+
++mod      + :ref:`rtti::Module <handle-rtti-Module>` ? const+
++---------+-------------------------------------------------+
+
+
+Creates a class structure. Adds __rtti, __finalize fields.
+
+.. _function-_at_templates_boost_c__c_make_class_Cs_C1_ls_H_ls_ast_c__c_Structure_gr__gr_?_C1_ls_H_ls_rtti_c__c_Module_gr__gr_?:
+
+.. das:function:: make_class(name: string const; baseClass: ast::Structure? const; mod: rtti::Module? const)
+
+make_class returns smart_ptr< :ref:`ast::Structure <handle-ast-Structure>` >
+
++---------+-----------------------------------------------------+
++argument +argument type                                        +
++=========+=====================================================+
++name     +string const                                         +
++---------+-----------------------------------------------------+
++baseClass+ :ref:`ast::Structure <handle-ast-Structure>` ? const+
++---------+-----------------------------------------------------+
++mod      + :ref:`rtti::Module <handle-rtti-Module>` ? const    +
++---------+-----------------------------------------------------+
+
+
+Creates a class structure. Adds __rtti, __finalize fields.
+
+.. _function-_at_templates_boost_c__c_make_class_constructor_CY_ls_StructurePtr_gr_1_ls_H_ls_ast_c__c_Structure_gr__gr_?M_CY_ls_FunctionPtr_gr_1_ls_H_ls_ast_c__c_Function_gr__gr_?M:
+
+.. das:function:: make_class_constructor(cls: StructurePtr; ctor: FunctionPtr)
+
+make_class_constructor returns smart_ptr< :ref:`ast::Function <handle-ast-Function>` >
+
++--------+------------------------------------------+
++argument+argument type                             +
++========+==========================================+
++cls     + :ref:`StructurePtr <alias-StructurePtr>` +
++--------+------------------------------------------+
++ctor    + :ref:`FunctionPtr <alias-FunctionPtr>`   +
++--------+------------------------------------------+
+
+
+Adds a class constructor from a constructor function.
+
+.. _function-_at_templates_boost_c__c_modify_to_class_member_CY_ls_StructurePtr_gr_1_ls_H_ls_ast_c__c_Structure_gr__gr_?M_CY_ls_FunctionPtr_gr_1_ls_H_ls_ast_c__c_Function_gr__gr_?M_Cb_Cb:
+
+.. das:function:: modify_to_class_member(cls: StructurePtr; fun: FunctionPtr; isExplicit: bool const; Constant: bool const)
+
++----------+------------------------------------------+
++argument  +argument type                             +
++==========+==========================================+
++cls       + :ref:`StructurePtr <alias-StructurePtr>` +
++----------+------------------------------------------+
++fun       + :ref:`FunctionPtr <alias-FunctionPtr>`   +
++----------+------------------------------------------+
++isExplicit+bool const                                +
++----------+------------------------------------------+
++Constant  +bool const                                +
++----------+------------------------------------------+
+
+
+Modifies function to be a member of a particular class.
 
 .. _function-_at_templates_boost_c__c_add_array_ptr_ref_1_ls_1_ls_Y_ls_TT_gr_._gr_?M_gr_A:
 

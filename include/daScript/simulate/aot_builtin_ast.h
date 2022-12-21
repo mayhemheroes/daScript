@@ -25,6 +25,7 @@ namespace das {
     protected:
         DECL_VISIT(Program);
         Func FN_PREVISIT(ProgramBody);
+        DECL_VISIT(Module);
         DECL_VISIT(TypeDecl);
         DECL_VISIT(Expression);
         DECL_VISIT(Alias);
@@ -82,6 +83,7 @@ namespace das {
         Func FN_PREVISIT(ExprMoveRight);
         DECL_VISIT(ExprClone);
         Func FN_PREVISIT(ExprCloneRight);
+        Func fnCanVisitWithAliasSubexpression;
         DECL_VISIT(ExprAssume);
         DECL_VISIT(ExprWith);
         Func FN_PREVISIT(ExprWithBody);
@@ -174,6 +176,7 @@ namespace das {
         DECL_VISIT(ExprConstFloat4);
         DECL_VISIT(ExprConstString);
         DECL_VISIT(ExprConstDouble);
+        Func fnCanVisitMakeBlockBody;
         DECL_VISIT(ExprMakeBlock);
         DECL_VISIT(ExprMakeGenerator);
         DECL_VISIT(ExprMemZero);
@@ -185,6 +188,9 @@ namespace das {
         virtual void preVisitProgram ( Program * expr ) override;
         virtual void visitProgram ( Program * expr ) override;
         virtual void preVisitProgramBody ( Program * expr, Module * mod ) override;
+    // module
+        virtual void preVisitModule ( Module * mod ) override;
+        virtual void visitModule ( Module * mod ) override;
     // type
         virtual void preVisit ( TypeDecl * expr ) override;
         virtual TypeDeclPtr visit ( TypeDecl * expr ) override;
@@ -291,7 +297,8 @@ namespace das {
     // clone
         IMPL_BIND_EXPR(ExprClone);
         virtual void preVisitRight ( ExprClone * expr, Expression * right ) override;
-    // with
+    // assume
+        virtual bool canVisitWithAliasSubexpression ( ExprAssume * expr) override;
         IMPL_BIND_EXPR(ExprAssume);
     // with
         IMPL_BIND_EXPR(ExprWith);
@@ -402,6 +409,7 @@ namespace das {
         IMPL_BIND_EXPR(ExprConstFloat4);
         IMPL_BIND_EXPR(ExprConstString);
         IMPL_BIND_EXPR(ExprConstDouble);
+        bool canVisitMakeBlockBody ( ExprMakeBlock * expr ) override;
         IMPL_BIND_EXPR(ExprMakeBlock);
         IMPL_BIND_EXPR(ExprMakeGenerator);
         IMPL_BIND_EXPR(ExprMemZero);
@@ -416,12 +424,12 @@ namespace das {
 #undef DECL_VISIT
 #undef IMPL_BIND_EXPR
 
-    char * ast_describe_typedecl ( smart_ptr_raw<TypeDecl> t, bool d_extra, bool d_contracts, bool d_module, Context * context );
-    char * ast_describe_typedecl_cpp ( smart_ptr_raw<TypeDecl> t, bool d_substitureRef, bool d_skipRef, bool d_skipConst, bool d_redundantConst, Context * context );
-    char * ast_describe_expression ( smart_ptr_raw<Expression> t, Context * context );
-    char * ast_describe_function ( smart_ptr_raw<Function> t, Context * context );
+    char * ast_describe_typedecl ( smart_ptr_raw<TypeDecl> t, bool d_extra, bool d_contracts, bool d_module, Context * context, LineInfoArg * at );
+    char * ast_describe_typedecl_cpp ( smart_ptr_raw<TypeDecl> t, bool d_substitureRef, bool d_skipRef, bool d_skipConst, bool d_redundantConst, Context * context, LineInfoArg * at );
+    char * ast_describe_expression ( smart_ptr_raw<Expression> t, Context * context, LineInfoArg * at );
+    char * ast_describe_function ( smart_ptr_raw<Function> t, Context * context, LineInfoArg * at );
     char * ast_das_to_string ( Type bt, Context * context );
-    char * ast_find_bitfield_name ( smart_ptr_raw<TypeDecl> bft, Bitfield value, Context * context );
+    char * ast_find_bitfield_name ( smart_ptr_raw<TypeDecl> bft, Bitfield value, Context * context, LineInfoArg * at );
     int64_t ast_find_enum_value ( EnumerationPtr enu, const char * value );
 
     int32_t any_array_size ( void * _arr );
@@ -429,8 +437,8 @@ namespace das {
     void any_array_foreach ( void * _arr, int stride, const TBlock<void,void *> & blk, Context * context, LineInfoArg * at );
     void any_table_foreach ( void * _tab, int keyStride, int valueStride, const TBlock<void,void *,void *> & blk, Context * context, LineInfoArg * at );
 
-    int32_t get_variant_field_offset ( smart_ptr_raw<TypeDecl> td, int32_t index );
-    int32_t get_tuple_field_offset ( smart_ptr_raw<TypeDecl> td, int32_t index );
+    int32_t get_variant_field_offset ( smart_ptr_raw<TypeDecl> td, int32_t index, Context * context, LineInfoArg * at );
+    int32_t get_tuple_field_offset ( smart_ptr_raw<TypeDecl> td, int32_t index, Context * context, LineInfoArg * at );
 
     __forceinline void mks_vector_emplace ( MakeStruct & vec, MakeFieldDeclPtr & value ) {
         vec.emplace_back(move(value));
@@ -455,6 +463,7 @@ namespace das {
     void astVisitModulesInOrder ( smart_ptr_raw<Program> program, smart_ptr_raw<VisitorAdapter> adapter, Context * context, LineInfoArg * line_info );
     void astVisitFunction ( smart_ptr_raw<Function> func, smart_ptr_raw<VisitorAdapter> adapter, Context * context, LineInfoArg * line_info);
     smart_ptr_raw<Expression> astVisitExpression ( smart_ptr_raw<Expression> expr, smart_ptr_raw<VisitorAdapter> adapter, Context * context, LineInfoArg * line_info);
+    void astVisitBlockFinally ( smart_ptr_raw<ExprBlock> expr, smart_ptr_raw<VisitorAdapter> adapter, Context * context, LineInfoArg * line_info );
     PassMacroPtr makePassMacro ( const char * name, const void * pClass, const StructInfo * info, Context * context );
     smart_ptr<VisitorAdapter> makeVisitor ( const void * pClass, const StructInfo * info, Context * context );
     void addModuleInferMacro ( Module * module, PassMacroPtr & _newM, Context * );
@@ -468,6 +477,8 @@ namespace das {
     void addModuleForLoopMacro ( Module * module, ForLoopMacroPtr & _newM, Context * );
     CaptureMacroPtr makeCaptureMacro ( const char * name, const void * pClass, const StructInfo * info, Context * context );
     void addModuleCaptureMacro ( Module * module, CaptureMacroPtr & _newM, Context * );
+    SimulateMacroPtr makeSimulateMacro ( const char * name, const void * pClass, const StructInfo * info, Context * context );
+    void addModuleSimulateMacro ( Module * module, SimulateMacroPtr & _newM, Context * );
     void addModuleFunctionAnnotation ( Module * module, FunctionAnnotationPtr & ann, Context * context );
     FunctionAnnotationPtr makeFunctionAnnotation ( const char * name, void * pClass, const StructInfo * info, Context * context );
     StructureAnnotationPtr makeStructureAnnotation ( const char * name, void * pClass, const StructInfo * info, Context * context );
@@ -477,9 +488,9 @@ namespace das {
     int addEnumerationEntry ( smart_ptr<Enumeration> enu, const char* name );
     void forEachFunction ( Module * module, const char * name, const TBlock<void,FunctionPtr> & block, Context * context, LineInfoArg * lineInfo );
     void forEachGenericFunction ( Module * module, const char * name, const TBlock<void,FunctionPtr> & block, Context * context, LineInfoArg * lineInfo );
-    bool addModuleFunction ( Module * module, FunctionPtr & func, Context * context );
-    bool addModuleGeneric ( Module * module, FunctionPtr & func, Context * context );
-    bool addModuleVariable ( Module * module, VariablePtr & var, Context * );
+    bool addModuleFunction ( Module * module, FunctionPtr & func, Context * context, LineInfoArg * lineInfo );
+    bool addModuleGeneric ( Module * module, FunctionPtr & func, Context * context, LineInfoArg * lineInfo );
+    bool addModuleVariable ( Module * module, VariablePtr & var, Context * context, LineInfoArg * lineInfo );
     VariablePtr findModuleVariable ( Module * module, const char * name );
     bool removeModuleStructure ( Module * module, StructurePtr & _stru );
     bool addModuleStructure ( Module * module, StructurePtr & stru );
@@ -497,6 +508,7 @@ namespace das {
     void addAndApplyFunctionAnnotation ( smart_ptr_raw<Function> func, smart_ptr_raw<AnnotationDeclaration> & ann, Context * context );
     void addBlockBlockAnnotation ( smart_ptr_raw<ExprBlock> block, FunctionAnnotationPtr & _ann, Context * context );
     void addAndApplyBlockAnnotation ( smart_ptr_raw<ExprBlock> blk, smart_ptr_raw<AnnotationDeclaration> & ann, Context * context );
+    void addAndApplyStructAnnotation ( smart_ptr_raw<Structure> st, smart_ptr_raw<AnnotationDeclaration> & ann, Context * context );
     __forceinline ExpressionPtr clone_expression ( ExpressionPtr value ) { return value ?value->clone() : nullptr; }
     __forceinline FunctionPtr clone_function ( FunctionPtr value ) { return value ? value->clone() : nullptr; }
     __forceinline TypeDeclPtr clone_type ( TypeDeclPtr value ) { return make_smart<TypeDecl>(*value); }
@@ -504,8 +516,10 @@ namespace das {
     __forceinline VariablePtr clone_variable ( VariablePtr value ) { return value ? value->clone() : nullptr; }
     void forceAtRaw ( const smart_ptr_raw<Expression> & expr, const LineInfo & at );
     void getAstContext ( smart_ptr_raw<Program> prog, smart_ptr_raw<Expression> expr, const TBlock<void,bool,AstContext> & block, Context * context, LineInfoArg * at );
-    char * get_mangled_name ( smart_ptr_raw<Function> func, Context * context );
-    char * get_mangled_name_t ( smart_ptr_raw<TypeDecl> typ, Context * context );
+    char * get_mangled_name ( smart_ptr_raw<Function> func, Context * context, LineInfoArg * at );
+    char * get_mangled_name_t ( smart_ptr_raw<TypeDecl> typ, Context * context, LineInfoArg * at );
+    char * get_mangled_name_v ( smart_ptr_raw<Variable> var, Context * context, LineInfoArg * at );
+    char * get_mangled_name_b ( smart_ptr_raw<ExprBlock> expr, Context * context, LineInfoArg * at );
     TypeDeclPtr parseMangledNameFn ( const char * txt, ModuleGroup & lib, Module * thisModule, Context * context, LineInfoArg * at );
     void collectDependencies ( FunctionPtr fun, const TBlock<void,TArray<Function *>,TArray<Variable *>> & block, Context * context, LineInfoArg * line );
     bool isExprLikeCall ( const ExpressionPtr & expr );
@@ -516,6 +530,7 @@ namespace das {
     bool builtin_isVisibleDirectly ( Module * from, Module * too );
     Module * findRttiModule ( smart_ptr<Program> THAT_PROGRAM, const char * name, Context *, LineInfoArg *);
     smart_ptr<Function> findRttiFunction ( Module * mod, Func func, Context * context, LineInfoArg * line_info );
+    void for_each_module ( Program * prog, const TBlock<void,Module *> & block, Context * context, LineInfoArg * at );
     void for_each_typedef ( Module * mod, const TBlock<void,TTemporary<char *>,TypeDeclPtr> & block, Context * context, LineInfoArg * at );
     void for_each_enumeration ( Module * mod, const TBlock<void,EnumerationPtr> & block, Context * context, LineInfoArg * at );
     void for_each_structure ( Module * mod, const TBlock<void,StructurePtr> & block, Context * context, LineInfoArg * at );
@@ -526,6 +541,18 @@ namespace das {
     void for_each_variant_macro ( Module * mod, const TBlock<void,VariantMacroPtr> & block, Context * context, LineInfoArg * at );
     void for_each_typeinfo_macro ( Module * mod, const TBlock<void,TypeInfoMacroPtr> & block, Context * context, LineInfoArg * at );
     void for_each_for_loop_macro ( Module * mod, const TBlock<void,ForLoopMacroPtr> & block, Context * context, LineInfoArg * at );
+    Structure * find_unique_structure ( smart_ptr_raw<Program> prog, const char * name, Context * context, LineInfoArg * at );
+    bool exprReturns ( const ExpressionPtr & expr );
+    bool exprReturnsOrBreaks ( const ExpressionPtr & expr );
+    void * das_get_builtin_function_address ( Function * fn, Context * context, LineInfoArg * at );
+    void * das_make_interop_node ( Context & ctx, ExprCallFunc * call, Context * context, LineInfoArg * at );
+    void * das_sb_make_interop_node ( Context & ctx, ExprStringBuilder * call, Context * context, LineInfoArg * at );
+    void get_use_global_variables ( smart_ptr_raw<Function> func, const TBlock<void,VariablePtr> & block, Context * context, LineInfoArg * at );
+    void get_use_functions ( smart_ptr_raw<Function> func, const TBlock<void,FunctionPtr> & block, Context * context, LineInfoArg * at );
+    Structure::FieldDeclaration * ast_findStructureField ( Structure * structType, const char * field, Context * context, LineInfoArg * at );
+    int32_t ast_getTupleFieldOffset ( smart_ptr_raw<TypeDecl> ttype, int32_t field, Context * context, LineInfoArg * at );
+    void das_comp_log ( const char * text, Context * context, LineInfoArg * at );
+    TypeInfo * das_make_type_info_structure ( Context & ctx, TypeDeclPtr ptr, Context * context, LineInfoArg * at );
 
     template <>
     struct das_iterator <AnnotationArgumentList> : das_iterator<vector<AnnotationArgument>> {

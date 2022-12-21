@@ -58,6 +58,9 @@ namespace das
     struct CaptureMacro;
     typedef smart_ptr<CaptureMacro> CaptureMacroPtr;
 
+    struct SimulateMacro;
+    typedef smart_ptr<SimulateMacro> SimulateMacroPtr;
+
     struct AnnotationArgumentList;
 
     //      [annotation (value,value,...,value)]
@@ -249,6 +252,7 @@ namespace das
                 bool    privateStructure : 1;
                 bool    macroInterface : 1;
                 bool    sealed : 1;
+                bool    skipLockCheck : 1;
             };
             uint32_t    flags = 0;
         };
@@ -286,6 +290,7 @@ namespace das
                 bool    capture_as_ref : 1;
                 bool    can_shadow : 1;             // can shadow block or function arguments, as block argument
                 bool    private_variable : 1;
+                bool    tag : 1;
             };
             uint32_t flags = 0;
         };
@@ -326,6 +331,8 @@ namespace das
         virtual bool rtti_isFunctionAnnotation() const override { return true; }
         virtual bool apply ( const FunctionPtr & func, ModuleGroup & libGroup,
                             const AnnotationArgumentList & args, string & err ) = 0;
+        virtual bool generic_apply ( const FunctionPtr &, ModuleGroup &,
+                            const AnnotationArgumentList &, string & ) { return true; };
         virtual bool finalize ( const FunctionPtr & func, ModuleGroup & libGroup,
                                const AnnotationArgumentList & args,
                                const AnnotationArgumentList & progArgs, string & err ) = 0;
@@ -462,6 +469,9 @@ namespace das
         virtual bool patch (const StructurePtr &, ModuleGroup &,
             const AnnotationArgumentList &, string &, bool & /*astChanged*/ ) { return true; } // this one happens after infer. this can restart infer by setting astChange
         virtual void complete ( Context *, const StructurePtr & ) { }
+        virtual void aotPrefix ( const StructurePtr &, const AnnotationArgumentList &, TextWriter & ) { }
+        virtual void aotBody   ( const StructurePtr &, const AnnotationArgumentList &, TextWriter & ) { }
+        virtual void aotSuffix ( const StructurePtr &, const AnnotationArgumentList &, TextWriter & ) { }
     };
     typedef smart_ptr<StructureAnnotation> StructureAnnotationPtr;
 
@@ -575,6 +585,8 @@ namespace das
                 bool    constexpression : 1;
                 bool    noSideEffects : 1;
                 bool    noNativeSideEffects : 1;
+                bool    isForLoopSource : 1;
+                bool    isCallArgument : 1;
             };
             uint32_t    flags = 0;
         };
@@ -766,6 +778,10 @@ namespace das
                 bool    macroFunction : 1;
                 bool    needStringCast : 1;
                 bool    aotHashDeppendsOnArguments : 1;
+                bool    lateInit : 1;
+                bool    requestJit : 1;
+                bool    unsafeOutsideOfFor : 1;
+                bool    skipLockCheck : 1;
             };
             uint32_t moreFlags = 0;
 
@@ -812,6 +828,7 @@ namespace das
             }
             return this;
         }
+        virtual void * getBuiltinAddress() const { return nullptr; }
     public:
         void construct (const vector<TypeDeclPtr> & args );
         void constructExternal (const vector<TypeDeclPtr> & args );
@@ -929,6 +946,7 @@ namespace das
         static void Shutdown();
         static void Reset(bool debAg);
         static void ClearSharedModules();
+        static void CollectSharedModules();
         static TypeAnnotation * resolveAnnotation ( const TypeInfo * info );
         static Type findOption ( const string & name );
         static void foreach(const callable<bool(Module * module)> & func);
@@ -983,6 +1001,7 @@ namespace das
         vector<VariantMacroPtr>                     variantMacros;      //  X is Y, X as Y expression handler
         vector<ForLoopMacroPtr>                     forLoopMacros;      // for loop macros (for every for loop)
         vector<CaptureMacroPtr>                     captureMacros;      // lambda capture macros
+        vector<SimulateMacroPtr>                    simulateMacros;     // simulate macros (every time we simulate context)
         das_map<string,ReaderMacroPtr>              readMacros;         // %foo "blah"
         CommentReaderPtr                            commentReader;      // /* blah */ or // blah
         string  name;
@@ -1015,6 +1034,22 @@ namespace das
             Namespace::ClassName * module_##ClassName = new Namespace::ClassName(); \
             return module_##ClassName; \
         }
+
+    using module_pull_t = das::Module*(*)();
+    struct ModulePullHelper
+    {
+        ModulePullHelper(module_pull_t pull);
+    };
+
+    void pull_all_auto_registered_modules();
+
+    #define AUTO_REGISTER_MODULE(ClassName) \
+        REGISTER_MODULE(ClassName)          \
+        static das::ModulePullHelper ClassName##RegisterHelper(&register_##ClassName);
+
+    #define AUTO_REGISTER_MODULE_IN_NAMESPACE(ClassName,Namespace) \
+        REGISTER_MODULE_IN_NAMESPACE(ClassName, Namespace)         \
+        static das::ModulePullHelper ClassName##RegisterHelper(&register_##ClassName);
 
     class ModuleDas : public Module {
     public:
@@ -1059,6 +1094,7 @@ namespace das
         virtual ~ModuleGroup();
         ModuleGroupUserData * getUserData ( const string & dataName ) const;
         bool setUserData ( ModuleGroupUserData * data );
+        void collectMacroContexts();
     protected:
         das_map<string,ModuleGroupUserDataPtr>  userData;
     };
@@ -1116,6 +1152,13 @@ namespace das
         string name;
     };
 
+    struct SimulateMacro : ptr_ref_count {
+        SimulateMacro ( const string na = "" ) : name(na) {}
+        virtual bool preSimulate ( Program *, Context * ) { return true; }
+        virtual bool simulate ( Program *, Context * ) { return true; }
+        string name;
+    };
+
     class DebugInfoHelper : ptr_ref_count {
     public:
         DebugInfoHelper () { debugInfo = make_shared<DebugInfoAllocator>(); }
@@ -1154,6 +1197,8 @@ namespace das
         uint32_t    string_heap_size_hint = 65536;
         bool        solid_context = false;              // all access to varable and function lookup to be context-dependent (via index)
                                                         // this is slightly faster, but prohibits AOT or patches
+        bool        macro_context_persistent_heap = true;   // if true, then persistent heap is used for macro context
+        bool        macro_context_collect = false;          // GC collect macro context after major passes
     // rtti
         bool rtti = false;                              // create extended RTTI
     // language
@@ -1182,6 +1227,12 @@ namespace das
         //      2. invoke of blocks will have extra prologue overhead
         bool debugger = false;
         string debug_module;
+    // profiler
+        // only enabled if profiler is disabled
+        // when enabled
+        //      1. disables [fastcall]
+        bool profiler = false;
+        string profile_module;
     };
 
     struct CommentReader : public ptr_ref_count {
@@ -1273,6 +1324,7 @@ namespace das
         void buildADLookup ( Context & context, TextWriter & logs );
         bool getOptimize() const;
         bool getDebugger() const;
+        bool getProfiler() const;
         void makeMacroModule( TextWriter & logs );
         vector<ReaderMacroPtr> getReaderMacro ( const string & markup ) const;
     protected:
@@ -1393,6 +1445,7 @@ namespace das
         Module *        modules = nullptr;
         int             das_def_tab_size = 4;
         bool            g_resolve_annotations = true;
+        TextWriter *    g_compilerLog = nullptr;
         static DAS_THREAD_LOCAL daScriptEnvironment * bound;
         static DAS_THREAD_LOCAL daScriptEnvironment * owned;
         static void ensure();

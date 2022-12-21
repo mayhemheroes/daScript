@@ -1,30 +1,31 @@
-require daslib/templates_boost
-require daslib/ast_boost
-require daslib/strings
+// options persistent_heap
+
+require daslib/rtti
+require fio
+
+[sideeffects]
+def fibR(n:int)
+    if (n < 2)
+        return n
+    return fibR(n - 1) + fibR(n - 2)
+
+[sideeffects]
+def wait_1_msec
+    let t0 = ref_time_ticks()
+    while get_time_usec(t0) < 1000
+        pass
+
+struct Foo
+    i : int
+
+[sideeffects]
+def use_heap
+    for i in range(10)
+        var f = new [[Foo i=i]]
+        print("f = {f}\n")
 
 [export]
-def main
-    print("hello, world\n")
-    let bus = "bus_variable_name"
-    let car = "car_variable_name"
-    var a1 = 1
-    var a2 = a1 + 1
-    var a3 = a1 + 13
-    var expr <- quote(length(bus))
-    var qqblk : array<ExpressionPtr>
-    for i in range(3)
-        qqblk |> emplace <| qmacro(print("{$$v(i)}\n"))
-    var arguments <- [{ExpressionPtr quote(a1); quote(a2)}]
-    var aargs <- [{ExpressionPtr quote(a1); quote(a2); quote(a3)}]
-    var subtype <- typeinfo(ast_typedecl type<int>)
-    var blk <- qmacro <|
-        let t = $$i(bus)
-        let q = $$v([[auto a1,car]])
-        let lb = $$(expr)
-        print("{q}{t}{lb}\n")
-        $$b(qqblk)
-        somefunnycall(1,$$a(arguments),2)
-        var aaa <- [[auto $$a(aargs)]]
-        var a : $$(subtype)
-    print(describe(blk))
+def main()
+    this_context().name := "boohoo"
+    use_heap()
 

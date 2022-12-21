@@ -93,6 +93,8 @@ namespace das
     }
 
     int builtin_string_find1 ( const char *str, const char *substr, int start, Context * context ) {
+        if (!str || !substr)
+            return -1;
         const uint32_t strLen = stringLengthSafe ( *context, str );
         if (!strLen)
             return -1;
@@ -101,7 +103,7 @@ namespace das
     }
 
     int builtin_string_find2 (const char *str, const char *substr) {
-        if (!str)
+        if (!str || !substr)
             return -1;
         const char *ret = strstr(str, substr);
         return ret ? int(ret-str) : -1;
@@ -112,7 +114,7 @@ namespace das
     }
 
     char* builtin_string_chop(const char* str, int start, int length, Context* context) {
-        if ( !str ) return nullptr;
+        if ( !str || length<=0 ) return nullptr;
         return context->stringHeap->allocateString(str + start, length);
     }
 
@@ -396,7 +398,7 @@ namespace das
 
     char * string_repeat ( const char * str, int count, Context * context ) {
         uint32_t len = stringLengthSafe ( *context, str );
-        if ( !len ) return nullptr;
+        if ( !len || count<=0 ) return nullptr;
         char * res = context->stringHeap->allocateString(nullptr, len * count);
         for ( char * s = res; count; count--, s+=len ) {
             memcpy ( s, str, len );
@@ -464,6 +466,7 @@ namespace das
         arr.data = (char *) tokens.data();
         arr.capacity = arr.size = uint32_t(tokens.size());
         arr.lock = 1;
+        arr.flags = 0;
         vec4f args[1];
         args[0] = cast<Array *>::from(&arr);
         context->invoke(block, args, nullptr, at);
@@ -502,6 +505,7 @@ namespace das
         arr.data = (char *) tokens.data();
         arr.capacity = arr.size = uint32_t(tokens.size());
         arr.lock = 1;
+        arr.flags = 0;
         vec4f args[1];
         args[0] = cast<Array *>::from(&arr);
         context->invoke(block, args, nullptr, at);
@@ -637,6 +641,7 @@ namespace das
         arr.data = (char *) str;
         arr.capacity = arr.size = uint32_t(strlen(str));
         arr.lock = 1;
+        arr.flags = 0;
         vec4f args[1];
         args[0] = cast<Array *>::from(&arr);
         context->invoke(block, args, nullptr, at);
@@ -651,6 +656,7 @@ namespace das
         arr.data = cstr;
         arr.capacity = arr.size = len;
         arr.lock = 1;
+        arr.flags = 0;
         vec4f args[1];
         args[0] = cast<Array *>::from(&arr);
         context->invoke(block, args, nullptr, at);
@@ -822,7 +828,11 @@ namespace das
                 SideEffects::none, "is_number")->arg("Character");
             // bitset helpers
             addExtern<DAS_BIND_FUN(is_char_in_set)>(*this, lib, "is_char_in_set",
-                SideEffects::none,"is_char_in_set")->args({"Character","Charset"});
+                SideEffects::none,"is_char_in_set")->args({"Character","Charset","Context","At"});
+            addExtern<DAS_BIND_FUN(char_set_total)>(*this, lib, "set_total",
+                SideEffects::none,"char_set_total")->arg("Charset");
+            addExtern<DAS_BIND_FUN(char_set_element)>(*this, lib, "set_element",
+                SideEffects::none,"char_set_element")->args({"Character","Charset"});
             // string buffer
             addExtern<DAS_BIND_FUN(builtin_reserve_string_buffer)>(*this, lib, "reserve_string_buffer",
                 SideEffects::none,"builtin_reserve_string_buffer")->args({"str","length","context"});

@@ -3,6 +3,20 @@ require daslib/ast_boost
 require daslib/strings
 require daslib/defer
 
+def test_block_to_array
+    var blk_array <- qmacro_block_to_array <|
+        a <- 1
+        b <- 2
+        c <- 3
+    for a in blk_array
+        print("{describe(a)}\n")
+    delete blk_array
+
+def test_addr
+    let foobar = "FOO_BAR"
+    var aaddr <- qmacro(@@ $i(foobar)); defer_delete(aaddr)
+    print("\nADDR IS:\n{describe(aaddr)}\n")
+
 def test_fun_arg
     var foo <- [{VariablePtr
         new [[Variable() name:="v1", _type<-qmacro_type(type<int>)]];
@@ -29,6 +43,14 @@ def test_fun
         return $i("a") + b
     print("\nFUNCTION REIFICATION IS:\n{describe(fun)}\n")
     delete fun
+
+def test_for
+    var bus = "BUS"
+    var blk <- qmacro_block <|
+        for $i(bus) in foobar
+            print("{$i(bus)}\n")
+    print("\nFOR REIFICATION IS:\n{describe(blk)}\n")
+    delete blk
 
 def test_regular
     let bus = "bus_variable_name"
@@ -63,14 +85,19 @@ def test_regular
             print("hello!\n")
         let qq = @@$c(cll)
         let $i(bus) = "busbus"
+        invoke <| $ ( $i(bus) : bool )
+            pass
     print(describe(blk))
     delete blk
 
 [export]
 def main
+    test_block_to_array()
+    test_addr()
     test_regular()
     test_fun()
     test_type()
     test_var()
     test_fun_arg()
+    test_for()
 
