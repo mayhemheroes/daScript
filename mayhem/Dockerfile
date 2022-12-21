@@ -5,6 +5,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential cmake free
 
 COPY . /repo
 WORKDIR /repo
+RUN sed -i '1s/^/#include <atomic>\n/' src/builtin/module_builtin_network.cpp
 RUN ln -s /usr/bin/gcc /usr/bin/gcc-9
 RUN ln -s /usr/bin/g++ /usr/bin/g++-9
 RUN chmod +x ./generate_gcc_linux_min.sh
