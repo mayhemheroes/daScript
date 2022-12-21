@@ -1,0 +1,6 @@
+project: dascript
+target: isutf8text
+
+cmds:
+  - cmd: /fuzz_isUtf8Text
+    libfuzzer: true
