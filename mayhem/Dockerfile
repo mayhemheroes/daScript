@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 ubuntu:22.04 as builder
+FROM ubuntu:22.04 AS builder
 
 RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential cmake freeglut3-dev clang
@@ -14,6 +14,6 @@ WORKDIR /repo/cmake_temp
 RUN make -j8
 RUN clang++ /repo/mayhem/fuzz_isUtf8Text.cpp -fsanitize=fuzzer,address -L /repo/cmake_temp/ -llibDaScript -o /fuzz
 
-FROM ubuntu:22.04 as package
+FROM ubuntu:22.04 AS package
 COPY --from=builder /repo/bin/daScript /
 COPY --from=builder /fuzz /fuzz_isUtf8Text
